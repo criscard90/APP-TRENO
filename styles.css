@@ -370,6 +370,21 @@ body {
 
 .cd-value.done { color: var(--good); font-size: 15px; }
 
+.cd-row.sub {
+  margin-top: 4px;
+  padding: 5px 14px 7px;
+  background: transparent;
+}
+
+.cd-row.sub .cd-label { font-size: 10px; }
+
+.cd-value.sub {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-2);
+  letter-spacing: 0.3px;
+}
+
 .btn-details {
   margin-top: 12px;
   width: 100%;

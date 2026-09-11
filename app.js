@@ -223,9 +223,13 @@ function createCard(solution, index, isNext) {
         <span class="t-date">${formatDate(solution.arrivalTime)}</span>
       </div>
     </div>
-    <div class="cd-row">
-      <span class="cd-label">${isNext ? 'Prossimo arrivo' : 'Arrivo'}</span>
-      <span class="cd-value" id="cd-${index}">--:--:--</span>
+    <div class="cd-row main">
+      <span class="cd-label">Parte tra</span>
+      <span class="cd-value" id="cd-dep-${index}">--:--:--</span>
+    </div>
+    <div class="cd-row sub">
+      <span class="cd-label">Arriva tra</span>
+      <span class="cd-value sub" id="cd-arr-${index}">--:--:--</span>
     </div>
     <button class="btn-details" type="button">Dettagli</button>
   `;
@@ -240,19 +244,35 @@ function startCountdowns() {
   countdownIntervals.length = 0;
 
   activeSolutions.forEach((solution, index) => {
-    const target = new Date(solution.arrivalTime);
-    const el = document.getElementById('cd-' + index);
-    if (!el) return;
+    const depTarget = new Date(solution.departureTime);
+    const arrTarget = new Date(solution.arrivalTime);
+    const elDep = document.getElementById('cd-dep-' + index);
+    const elArr = document.getElementById('cd-arr-' + index);
+    if (!elDep || !elArr) return;
+    let stopped = false;
 
     const tick = () => {
-      const parts = getCountdownParts(target, new Date());
-      if (!parts) {
-        el.textContent = '✓ arrivato';
-        el.classList.add('done');
-        clearInterval(countdownIntervals[index]);
-        return;
+      const now = new Date();
+      const depParts = getCountdownParts(depTarget, now);
+      const arrParts = getCountdownParts(arrTarget, now);
+
+      if (depParts) {
+        elDep.textContent = pad2(depParts.hours) + ':' + pad2(depParts.minutes) + ':' + pad2(depParts.seconds);
+      } else {
+        elDep.textContent = '✓ partito';
+        elDep.classList.add('done');
       }
-      el.textContent = pad2(parts.hours) + ':' + pad2(parts.minutes) + ':' + pad2(parts.seconds);
+
+      if (arrParts) {
+        elArr.textContent = pad2(arrParts.hours) + ':' + pad2(arrParts.minutes) + ':' + pad2(arrParts.seconds);
+      } else {
+        elArr.textContent = '✓ arrivato';
+        elArr.classList.add('done');
+        if (!stopped) {
+          stopped = true;
+          clearInterval(countdownIntervals[index]);
+        }
+      }
     };
 
     tick();
