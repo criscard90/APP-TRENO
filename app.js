@@ -4,6 +4,15 @@
 const NATIVE_API_URL = 'https://www.lefrecce.it/Channels.Website.BFF.WEB/website/ticket/solutions';
 const WEB_API_URL = '/';
 
+// === PERCORSI ===
+const ROUTES = {
+  andata: { from: 'Roma Tiburtina', to: 'Ponte Di Nona', dep: 830008217, arr: 830013705 },
+  ritorno: { from: 'Ponte Di Nona', to: 'Roma Tiburtina', dep: 830013705, arr: 830008217 }
+};
+
+let currentDir = 'andata';
+try { currentDir = localStorage.getItem('trenoDir') === 'ritorno' ? 'ritorno' : 'andata'; } catch {}
+
 const PAYLOAD_TEMPLATE = {
   departureLocationId: 830008217,
   arrivalLocationId: 830013705,
@@ -110,7 +119,13 @@ function pad2(n) { return String(n).padStart(2, '0'); }
 // --- Chiamata API (dual-mode: nativa APK / web same-origin) ---
 
 async function searchTrains(departureTime) {
-  const payload = { ...PAYLOAD_TEMPLATE, departureTime: departureTime };
+  const route = ROUTES[currentDir] || ROUTES.andata;
+  const payload = {
+    ...PAYLOAD_TEMPLATE,
+    departureLocationId: route.dep,
+    arrivalLocationId: route.arr,
+    departureTime: departureTime
+  };
 
   const http = getCapacitorHttp();
   if (http) {
@@ -310,6 +325,21 @@ function closeSheet() {
   document.getElementById('sheetBackdrop').classList.remove('open');
 }
 
+// --- Percorso (direzione) ---
+
+function updateRouteUI() {
+  const route = ROUTES[currentDir] || ROUTES.andata;
+  document.getElementById('routeFrom').textContent = route.from;
+  document.getElementById('routeTo').textContent = route.to;
+}
+
+function swapDirection() {
+  currentDir = currentDir === 'andata' ? 'ritorno' : 'andata';
+  try { localStorage.setItem('trenoDir', currentDir); } catch {}
+  updateRouteUI();
+  doSearch();
+}
+
 // --- Orologio realtime (in alto a destra) ---
 
 function updateClock() {
@@ -362,11 +392,13 @@ if ('serviceWorker' in navigator && !getCapacitorHttp()) {
 
 document.addEventListener('DOMContentLoaded', () => {
   setDefaultInputs();
+  updateRouteUI();
   updateClock();
   setInterval(updateClock, 1000);
 
   doSearch();
 
+  document.getElementById('routeBadge').addEventListener('click', swapDirection);
   document.getElementById('btnSearch').addEventListener('click', doSearch);
   document.getElementById('btnNow').addEventListener('click', () => {
     setDefaultInputs();
