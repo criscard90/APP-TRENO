@@ -1,18 +1,8 @@
 // === CONFIGURAZIONE API ===
-// - APK (Capacitor): chiamata HTTP NATIVA via CapacitorHttp -> niente CORS,
-//   funziona senza PC acceso, senza server e senza tunnel.
-// - Web/PWA: fallback fetch same-origin verso il server unico (local-proxy.mjs,
-//   porta 8787) che serve l'app e fa da proxy verso lefrecce.it.
+// - APK (Capacitor): HTTP nativa via CapacitorHttp -> niente CORS, niente PC.
+// - Web/PWA: fetch same-origin verso il server unico (local-proxy.mjs, :8787).
 const NATIVE_API_URL = 'https://www.lefrecce.it/Channels.Website.BFF.WEB/website/ticket/solutions';
 const WEB_API_URL = '/';
-
-function getCapacitorHttp() {
-  try {
-    return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) || null;
-  } catch {
-    return null;
-  }
-}
 
 const PAYLOAD_TEMPLATE = {
   departureLocationId: 830008217,
@@ -37,7 +27,15 @@ const PAYLOAD_TEMPLATE = {
   }
 };
 
-// --- Utility ---
+function getCapacitorHttp() {
+  try {
+    return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) || null;
+  } catch {
+    return null;
+  }
+}
+
+// --- Data/ora ricerca ---
 
 function getRoundedNow() {
   const now = new Date();
@@ -46,13 +44,45 @@ function getRoundedNow() {
   return now;
 }
 
+function setDefaultInputs() {
+  const d = getRoundedNow();
+  const date = d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+  const time = String(d.getHours()).padStart(2, '0') + ':' +
+    String(d.getMinutes()).padStart(2, '0');
+  document.getElementById('inputDate').value = date;
+  document.getElementById('inputTime').value = time;
+}
+
+function getChosenDeparture() {
+  const date = document.getElementById('inputDate').value;
+  const time = document.getElementById('inputTime').value;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(time)) {
+    return date + 'T' + time + ':00.000';
+  }
+  // fallback: adesso arrotondato all'ora successiva
+  return formatToAPIDate(getRoundedNow());
+}
+
+function formatChosen(dateStr) {
+  // "2026-09-14T16:00:00.000" -> "lun 14 set, 16:00"
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(dateStr);
+  if (!m) return dateStr;
+  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  return d.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' }) +
+    ' · ' + m[4] + ':' + m[5];
+}
+
+// --- Utility formattazione ---
+
 function formatToAPIDate(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   const h = String(date.getHours()).padStart(2, '0');
   const min = String(date.getMinutes()).padStart(2, '0');
-  return `${y}-${m}-${d}T${h}:${min}:00.000`;
+  return y + '-' + m + '-' + d + 'T' + h + ':' + min + ':00.000';
 }
 
 function formatTime(dateStr) {
@@ -62,18 +92,7 @@ function formatTime(dateStr) {
 
 function formatDate(dateStr) {
   const d = new Date(dateStr);
-  return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' });
-}
-
-function formatFullDateTime(dateStr) {
-  const d = new Date(dateStr);
-  return d.toLocaleString('it-IT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  return d.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' });
 }
 
 function getCountdownParts(targetDate, now) {
@@ -86,15 +105,13 @@ function getCountdownParts(targetDate, now) {
   return { hours, minutes, seconds };
 }
 
-// --- API call ---
+function pad2(n) { return String(n).padStart(2, '0'); }
 
-async function searchTrains() {
-  const departureTime = getRoundedNow();
-  const payload = { ...PAYLOAD_TEMPLATE, departureTime: formatToAPIDate(departureTime) };
+// --- Chiamata API (dual-mode: nativa APK / web same-origin) ---
 
-  document.getElementById('searchDepartureTime').textContent = formatFullDateTime(departureTime);
+async function searchTrains(departureTime) {
+  const payload = { ...PAYLOAD_TEMPLATE, departureTime: departureTime };
 
-  // Modalità APK (Capacitor): HTTP nativa, bypassa il CORS
   const http = getCapacitorHttp();
   if (http) {
     const response = await http.request({
@@ -106,14 +123,12 @@ async function searchTrains() {
       },
       data: payload
     });
-
     if (response.status < 200 || response.status >= 300) {
       throw new Error('Errore API: ' + response.status);
     }
     return typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
   }
 
-  // Modalità web: same-origin verso il server unico (local-proxy.mjs)
   const response = await fetch(WEB_API_URL, {
     method: 'POST',
     headers: {
@@ -123,183 +138,221 @@ async function searchTrains() {
     },
     body: JSON.stringify(payload)
   });
-
   if (!response.ok) {
     throw new Error('Errore API: ' + response.status + ' ' + response.statusText);
   }
-
   return response.json();
 }
 
-// --- Render ---
+// --- Render soluzioni ---
+
+let activeSolutions = [];
+const countdownIntervals = [];
 
 function renderSolutions(data) {
   const container = document.getElementById('solutions');
+  const info = document.getElementById('resultsInfo');
   container.innerHTML = '';
 
-  if (!data.solutions || data.solutions.length === 0) {
-    container.innerHTML = '<div class="error"><p>Nessuna soluzione trovata.</p></div>';
-    return;
-  }
-
-  // Take first 3 solutions, filter those with exactly 1 train (direct)
-  const directTrains = data.solutions
+  const all = (data && data.solutions) || [];
+  const direct = all
     .slice(0, 3)
     .map(item => item.solution)
-    .filter(solution => solution && solution.trains && solution.trains.length === 1);
+    .filter(s => s && s.trains && s.trains.length === 1);
 
-  if (directTrains.length === 0) {
-    container.innerHTML = '<div class="error"><p>Nessun treno diretto trovato nelle prime 3 soluzioni.</p></div>';
+  if (direct.length === 0) {
+    info.style.display = 'none';
+    container.innerHTML = '<div class="error"><p>Nessun treno diretto trovato. Prova a cambiare data o ora.</p></div>';
     return;
   }
 
-  directTrains.forEach((solution, index) => {
-    const card = createCard(solution, index);
-    container.appendChild(card);
+  activeSolutions = direct;
+  info.style.display = 'block';
+  info.textContent = direct.length + (direct.length === 1 ? ' treno diretto' : ' treni diretti') + ' · tocca la card per i dettagli';
+
+  direct.forEach((solution, i) => {
+    container.appendChild(createCard(solution, i, i === 0));
   });
 }
 
-function createCard(solution, index) {
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+function createCard(solution, index, isNext) {
   const div = document.createElement('div');
-  div.className = 'solution-card';
-  div.id = `card-${index}`;
+  div.className = 'card' + (isNext ? ' next' : '');
+  div.dataset.idx = String(index);
 
   const train = solution.trains[0];
-  const arrivalTime = solution.arrivalTime;
-  const departureTime = solution.departureTime;
-  const duration = solution.duration;
+  const trainLabel = (train.acronym || '') + ' ' + (train.description || '');
 
   div.innerHTML = `
-    <div class="card-header">
-      <div class="train-badge">
-        <span class="train-icon">🚄</span>
-        <span>${train.description}</span>
-      </div>
-      <span class="train-type">${train.denomination}</span>
+    <div class="card-top">
+      <span class="train-chip">${escapeHtml(trainLabel)}</span>
+      ${isNext ? '<span class="next-chip">PROSSIMO</span>' : ''}
+      <span class="dur-chip">${escapeHtml(solution.duration || '')}</span>
     </div>
-    <div class="card-times">
-      <div class="time-block">
-        <span class="label">Partenza</span>
-        <span class="time">${formatTime(departureTime)}</span>
-        <span class="date">${formatDate(departureTime)}</span>
+    <div class="times-row">
+      <div class="t-block">
+        <span class="t-label">Partenza</span>
+        <span class="t-time">${formatTime(solution.departureTime)}</span>
+        <span class="t-date">${formatDate(solution.departureTime)}</span>
       </div>
-      <div class="time-divider">
-        <span class="duration">${duration}</span>
-        <div class="line"></div>
-      </div>
-      <div class="time-block" style="text-align:right">
-        <span class="label">Arrivo</span>
-        <span class="time">${formatTime(arrivalTime)}</span>
-        <span class="date">${formatDate(arrivalTime)}</span>
+      <span class="t-arrow">→</span>
+      <div class="t-block right">
+        <span class="t-label">Arrivo</span>
+        <span class="t-time">${formatTime(solution.arrivalTime)}</span>
+        <span class="t-date">${formatDate(solution.arrivalTime)}</span>
       </div>
     </div>
-    <div class="countdown-section">
-      <div class="countdown-label">Countdown all'arrivo</div>
-      <div class="countdown" id="countdown-${index}">
-        <div class="countdown-unit"><span class="value">--</span><span class="unit">ore</span></div>
-        <span class="countdown-sep">:</span>
-        <div class="countdown-unit"><span class="value">--</span><span class="unit">min</span></div>
-        <span class="countdown-sep">:</span>
-        <div class="countdown-unit"><span class="value">--</span><span class="unit">sec</span></div>
-      </div>
+    <div class="cd-row">
+      <span class="cd-label">${isNext ? 'Prossimo arrivo' : 'Arrivo'}</span>
+      <span class="cd-value" id="cd-${index}">--:--:--</span>
     </div>
+    <button class="btn-details" type="button">Dettagli</button>
   `;
 
   return div;
 }
 
-// --- Countdown updater ---
+// --- Countdown realtime ---
 
-const countdownIntervals = [];
-
-function startCountdowns(data) {
+function startCountdowns() {
   countdownIntervals.forEach(id => clearInterval(id));
   countdownIntervals.length = 0;
 
-  if (!data.solutions) return;
-
-  const directTrains = data.solutions
-    .slice(0, 3)
-    .map(item => item.solution)
-    .filter(solution => solution && solution.trains && solution.trains.length === 1);
-
-  directTrains.forEach((solution, index) => {
+  activeSolutions.forEach((solution, index) => {
     const target = new Date(solution.arrivalTime);
-    const el = document.getElementById(`countdown-${index}`);
+    const el = document.getElementById('cd-' + index);
     if (!el) return;
 
-    const intervalId = setInterval(() => {
-      const now = new Date();
-      const parts = getCountdownParts(target, now);
-
+    const tick = () => {
+      const parts = getCountdownParts(target, new Date());
       if (!parts) {
-        el.innerHTML = '<div class="countdown-finished">✓ Arrivato</div>';
-        clearInterval(intervalId);
+        el.textContent = '✓ arrivato';
+        el.classList.add('done');
+        clearInterval(countdownIntervals[index]);
         return;
       }
+      el.textContent = pad2(parts.hours) + ':' + pad2(parts.minutes) + ':' + pad2(parts.seconds);
+    };
 
-      const units = el.querySelectorAll('.countdown-unit .value');
-      if (units.length === 3) {
-        units[0].textContent = String(parts.hours).padStart(2, '0');
-        units[1].textContent = String(parts.minutes).padStart(2, '0');
-        units[2].textContent = String(parts.seconds).padStart(2, '0');
-      }
-    }, 1000);
-
-    countdownIntervals.push(intervalId);
+    tick();
+    countdownIntervals[index] = setInterval(tick, 1000);
   });
 }
 
-// --- Current time display ---
+// --- Scheda dettagli (bottom sheet) ---
 
-function updateCurrentTime() {
-  const el = document.getElementById('currentTime');
-  if (el) {
-    const now = new Date();
-    el.textContent = now.toLocaleString('it-IT', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
+function openSheet(index) {
+  const s = activeSolutions[index];
+  if (!s) return;
+
+  const train = s.trains[0];
+  const price = s.price && typeof s.price.amount === 'number'
+    ? s.price.amount.toFixed(2) + ' €' : '—';
+  const grid = s.grids && s.grids[0];
+  const service = grid && grid.services && grid.services[0];
+  const offer = service && service.offers && service.offers[0];
+  const status = s.status === 'SALEABLE' ? 'Acquistabile' : (s.status || '—');
+
+  let legsHtml = '';
+  if (s.nodes && s.nodes.length) {
+    legsHtml = s.nodes.map(n =>
+      '<div class="leg">' +
+        '<span class="train-name">' + escapeHtml(((n.train && n.train.acronym) || '') + ' ' + ((n.train && n.train.description) || '')) + '</span>' +
+        '<span class="leg-times">' + formatTime(n.departureTime) + ' → ' + formatTime(n.arrivalTime) + '</span>' +
+      '</div>'
+    ).join('');
   }
+
+  document.getElementById('sheetContent').innerHTML = `
+    <div class="sheet-title">${escapeHtml(s.origin)} → ${escapeHtml(s.destination)}</div>
+    <div class="sheet-sub">${escapeHtml((train.denomination || '') + ' ' + (train.description || ''))} · ${escapeHtml(s.duration || '')}</div>
+    <div class="sheet-grid">
+      <div class="info-box">
+        <div class="k">Partenza</div>
+        <div class="v big">${formatTime(s.departureTime)}</div>
+        <div class="v">${formatDate(s.departureTime)}</div>
+      </div>
+      <div class="info-box">
+        <div class="k">Arrivo</div>
+        <div class="v big">${formatTime(s.arrivalTime)}</div>
+        <div class="v">${formatDate(s.arrivalTime)}</div>
+      </div>
+      <div class="info-box">
+        <div class="k">Prezzo</div>
+        <div class="v big accent">${price}</div>
+      </div>
+      <div class="info-box">
+        <div class="k">Stato</div>
+        <div class="v ${s.status === 'SALEABLE' ? 'good' : ''}">${escapeHtml(status)}</div>
+      </div>
+      <div class="info-box">
+        <div class="k">Classe</div>
+        <div class="v">${escapeHtml((service && service.shortName) || '—')}</div>
+      </div>
+      <div class="info-box">
+        <div class="k">Tariffa</div>
+        <div class="v">${escapeHtml((offer && offer.name) || '—')}</div>
+      </div>
+    </div>
+    ${legsHtml ? '<div class="legs"><div class="legs-title">Tratte</div>' + legsHtml + '</div>' : ''}
+  `;
+
+  document.getElementById('sheetBackdrop').classList.add('open');
 }
 
-// --- Main flow ---
+function closeSheet() {
+  document.getElementById('sheetBackdrop').classList.remove('open');
+}
+
+// --- Orologio realtime (in alto a destra) ---
+
+function updateClock() {
+  const now = new Date();
+  document.getElementById('currentTime').textContent =
+    now.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) + ' ' +
+    now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// --- Flusso principale ---
 
 async function doSearch() {
   const loading = document.getElementById('loading');
   const error = document.getElementById('error');
   const solutions = document.getElementById('solutions');
-  const btnReload = document.getElementById('btnReload');
+  const info = document.getElementById('resultsInfo');
+
+  const departureTime = getChosenDeparture();
 
   loading.style.display = 'flex';
   error.style.display = 'none';
   solutions.innerHTML = '';
-  btnReload.classList.add('spinning');
+  info.style.display = 'none';
 
   countdownIntervals.forEach(id => clearInterval(id));
   countdownIntervals.length = 0;
+  activeSolutions = [];
 
   try {
-    const data = await searchTrains();
+    const data = await searchTrains(departureTime);
     loading.style.display = 'none';
-    btnReload.classList.remove('spinning');
     renderSolutions(data);
-    startCountdowns(data);
+    startCountdowns();
   } catch (err) {
     loading.style.display = 'none';
-    btnReload.classList.remove('spinning');
     error.style.display = 'block';
-    document.getElementById('errorMessage').textContent = `Errore: ${err.message}`;
+    document.getElementById('errorMessage').textContent = 'Errore: ' + err.message;
   }
 }
 
-// --- Service Worker registration ---
+// --- Service worker (solo web, non in APK) ---
 
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && !getCapacitorHttp()) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   });
@@ -308,10 +361,24 @@ if ('serviceWorker' in navigator) {
 // --- Init ---
 
 document.addEventListener('DOMContentLoaded', () => {
-  updateCurrentTime();
-  setInterval(updateCurrentTime, 1000);
+  setDefaultInputs();
+  updateClock();
+  setInterval(updateClock, 1000);
 
   doSearch();
 
-  document.getElementById('btnReload').addEventListener('click', doSearch);
+  document.getElementById('btnSearch').addEventListener('click', doSearch);
+  document.getElementById('btnNow').addEventListener('click', () => {
+    setDefaultInputs();
+    doSearch();
+  });
+
+  document.getElementById('solutions').addEventListener('click', (e) => {
+    const card = e.target.closest('.card');
+    if (card) openSheet(Number(card.dataset.idx));
+  });
+
+  document.getElementById('sheetBackdrop').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeSheet();
+  });
 });
