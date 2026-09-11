@@ -1,0 +1,50 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Prepara cartella web (www)
+        run: |
+          mkdir -p www/icons
+          cp index.html app.js styles.css manifest.webmanifest service-worker.js www/
+          cp icons/icon.svg www/icons/
+
+      - name: Installa Capacitor
+        run: |
+          npm init -y
+          npm install --no-save @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+
+      - name: Aggiunge piattaforma Android
+        run: npx cap add android
+
+      - name: Sincronizza file web in Android
+        run: npx cap sync android
+
+      - name: Compila APK debug
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: treno-app-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

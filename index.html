@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#1a1a2e" />
+  <meta name="description" content="Treno App - Cerca treni e countdown in tempo reale" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Treno App</title>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-content">
+        <div class="logo">
+          <span class="logo-icon">🚆</span>
+          <h1>Treno App</h1>
+        </div>
+        <div class="current-time" id="currentTime"></div>
+      </div>
+      <div class="route-badge">
+        <span class="route-from">Roma Tiburtina</span>
+        <span class="route-arrow">→</span>
+        <span class="route-to">Ponte Di Nona</span>
+      </div>
+    </header>
+
+    <main class="main">
+      <div class="search-info">
+        <div class="info-pill">
+          <span class="info-label">Partenza cercata</span>
+          <span class="info-value" id="searchDepartureTime">--</span>
+        </div>
+        <button class="btn-reload" id="btnReload" title="Aggiorna">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
+            <path d="M21 3v5h-5" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Ricerca treni in corso...</p>
+      </div>
+
+      <div class="error" id="error" style="display:none">
+        <p id="errorMessage"></p>
+      </div>
+
+      <div class="solutions" id="solutions"></div>
+    </main>
+
+    <footer class="footer">
+      <span>Dati da lefrecce.it • Aggiornamento in tempo reale</span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

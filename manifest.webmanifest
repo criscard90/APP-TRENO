@@ -1,0 +1,19 @@
+{
+  "name": "Treno App - Roma Tiburtina Ponte Di Nona",
+  "short_name": "Treno App",
+  "description": "Cerca treni regionali e countdown in tempo reale",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "orientation": "portrait",
+  "lang": "it",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

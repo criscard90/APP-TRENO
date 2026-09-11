@@ -1,0 +1,11 @@
+{
+  "appId": "it.cristiancardillo.trenoapp",
+  "appName": "Treno App",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
