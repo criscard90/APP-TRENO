@@ -48,8 +48,7 @@ function getCapacitorHttp() {
 
 function getRoundedNow() {
   const now = new Date();
-  now.setHours(now.getHours() + 1);
-  now.setMinutes(0, 0, 0);
+  now.setSeconds(0, 0);
   return now;
 }
 
