@@ -288,6 +288,7 @@ let busFetching = false;
 let busAutoActive = false;
 let busArrivals = null; // [{epoch, stopsAway}] dir 0, già ordinate
 let busSchedule = null; // schedule-555.json (orario programmato ufficiale)
+let busLastFetch = 0;
 
 function pbReadVarint(b, pos) {
   let result = 0n, shift = 0n;
@@ -422,6 +423,7 @@ async function updateBusInfo() {
   try {
     const arrivals = await fetchBus555();
     busArrivals = arrivals || [];
+    busLastFetch = Date.now();
   } catch {
     busArrivals = busArrivals || [];
   }
@@ -473,8 +475,10 @@ function renderBusInfo() {
   if (!eta && !busSchedule) {
     el.innerHTML = '🚌 <b>555</b> · tocca qui per aggiornare';
   } else {
+    const fresh = busArrivals && Date.now() - busLastFetch < 90000;
+    const live = eta || fresh ? '' : ' · <i>tocca qui per aggiornamento live</i>';
     el.innerHTML = '🚌 <b>555</b>' + head + ' · partenze da Ponte Di Nona: <b>' +
-      (sched.length ? sched.join(' - ') : '—') + '</b>';
+      (sched.length ? sched.join(' - ') : '—') + '</b>' + live;
   }
 }
 
@@ -623,6 +627,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   doSearch();
   startBusPolling();
+  updateBusInfo(); // primo fetch tempo reale all'avvio
 
   fetch('schedule-555.json')
     .then(r => (r.ok ? r.json() : null))
