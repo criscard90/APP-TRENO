@@ -332,7 +332,9 @@ const pbOne = (fs, n) => fs.find(f => f.field === n);
 const pbStr = f => (f && f.data ? new TextDecoder().decode(f.data) : null);
 const pbInt = f => (f && f.varint !== undefined ? Number(f.varint) : null);
 
-// Estrae gli arrivi del bus 555 (dir 0, verso Lunghezza) alla palina 82110
+// Estrae i movimenti del bus 555 alla palina 82110 (capolinea per ENTRAMBE le direzioni):
+// - dir 0 = parte da qui verso Lunghezza/Pantano (il bus che prendi)
+// - dir 1 = arriva qui in capolinea (poi riparte verso Lunghezza)
 function parseBus555RT(pb) {
   const top = pbDecodeFields(pb, 0, pb.length);
   const now = Date.now() / 1000;
@@ -348,7 +350,8 @@ function parseBus555RT(pb) {
     if (!tripRaw) continue;
     const trip = pbDecodeFields(tripRaw.data, 0, tripRaw.data.length);
     if (pbStr(pbOne(trip, 5)) !== '555') continue;
-    if (pbInt(pbOne(trip, 6)) !== BUS_DIR) continue;
+    const dir = pbInt(pbOne(trip, 6));
+    if (dir !== 0 && dir !== 1) continue;
 
     for (const stuRaw of pbAll(tu, 2)) { // StopTimeUpdate
       const stu = pbDecodeFields(stuRaw.data, 0, stuRaw.data.length);
@@ -357,10 +360,10 @@ function parseBus555RT(pb) {
       if (!arrRaw) continue;
       const arr = pbDecodeFields(arrRaw.data, 0, arrRaw.data.length);
       const epoch = pbInt(pbOne(arr, 2));
-      if (epoch && epoch - now > -60) out.push(epoch);
+      if (epoch && epoch - now > -60) out.push({ epoch, dir });
     }
   }
-  return out.sort((a, b) => a - b);
+  return out.sort((a, b) => a.epoch - b.epoch);
 }
 
 async function fetchBus555() {
@@ -423,17 +426,18 @@ function renderBusInfo() {
   const el = document.getElementById('bus555');
   if (!el) return;
   if (busArrivals === null) {
-    el.innerHTML = '🚌 <b>555</b> verso Lunghezza · <b>tocca qui per aggiornare</b>';
+    el.innerHTML = '🚌 <b>555</b> (capolinea Ponte Di Nona) · <b>tocca qui per aggiornare</b>';
   } else if (busArrivals.length === 0) {
-    el.innerHTML = '🚌 Nessun <b>555</b> verso Lunghezza in arrivo alla palina (prossimo non ancora nel feed RT)';
+    el.innerHTML = '🚌 Nessun <b>555</b> imminente alla palina (il prossimo non è ancora nel feed RT)';
   } else {
     const now = Date.now() / 1000;
-    const parts = busArrivals.slice(0, 3).map(ep => {
-      const min = Math.max(0, Math.round((ep - now) / 60));
-      const t = new Date(ep * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-      return '<b>tra ' + min + ' min</b> (' + t + ')';
+    const parts = busArrivals.slice(0, 3).map(m => {
+      const min = Math.max(0, Math.round((m.epoch - now) / 60));
+      const t = new Date(m.epoch * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      if (m.dir === 0) return 'parte <b>verso Lunghezza</b> tra ' + min + ' min (' + t + ')';
+      return '<b>in arrivo</b> al capolinea tra ' + min + ' min (' + t + ') → poi verso Lunghezza';
     });
-    el.innerHTML = '🚌 <b>555</b> verso Lunghezza · ' + parts.join(' · ');
+    el.innerHTML = '🚌 <b>555</b> · ' + parts.join(' · ');
   }
 }
 
