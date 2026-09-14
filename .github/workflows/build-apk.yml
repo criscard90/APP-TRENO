@@ -45,7 +45,7 @@ jobs:
         run: |
           # Le icone adaptive (anydpi-v26) hanno priorità sui PNG: le cancello
           rm -rf android/app/src/main/res/mipmap-anydpi-v26
-          # Rimuove anche i PNG di default nelle varie densità e la cartella base mipmap
+          # Rimuove i PNG di default di Capacitor (non le cartelle!)
           rm -f android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           rm -f android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
           rm -f android/app/src/main/res/mipmap-mdpi/ic_launcher.png
@@ -56,15 +56,9 @@ jobs:
           rm -f android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
           rm -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           rm -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
-          rm -rf android/app/src/main/res/mipmap
 
       - name: Copia icone Android
         run: |
-          mkdir -p android/app/src/main/res/mipmap-mdpi
-          mkdir -p android/app/src/main/res/mipmap-hdpi
-          mkdir -p android/app/src/main/res/mipmap-xhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
           cp resources/android-icons/mipmap-mdpi.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           cp resources/android-icons/mipmap-hdpi.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           cp resources/android-icons/mipmap-xhdpi.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
