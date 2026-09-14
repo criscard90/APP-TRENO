@@ -116,8 +116,24 @@ body {
 .search-bar {
   margin-top: 12px;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-row {
+  display: flex;
   gap: 8px;
   align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.search-row .field { flex: 1 1 auto; }
+
+.btn-search {
+  width: 100%;
+  justify-content: center;
+  padding: 11px 16px;
+  font-size: 15px;
 }
 
 .field {

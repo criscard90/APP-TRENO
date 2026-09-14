@@ -28,17 +28,19 @@
       </div>
 
       <div class="search-bar">
-        <div class="field">
-          <label for="inputDate">Data</label>
-          <input type="date" id="inputDate" />
+        <div class="search-row">
+          <div class="field">
+            <label for="inputDate">Data</label>
+            <input type="date" id="inputDate" />
+          </div>
+          <div class="field">
+            <label for="inputTime">Ora</label>
+            <input type="time" id="inputTime" />
+          </div>
+          <button class="btn btn-ghost" id="btnNow" title="Torna all'orario corrente">Adesso</button>
+          <button class="btn btn-refresh" id="btnRefresh" title="Aggiorna treni e bus">⟳</button>
         </div>
-        <div class="field">
-          <label for="inputTime">Ora</label>
-          <input type="time" id="inputTime" />
-        </div>
-        <button class="btn btn-primary" id="btnSearch">Cerca</button>
-        <button class="btn btn-ghost" id="btnNow" title="Torna all'orario corrente">Adesso</button>
-        <button class="btn btn-refresh" id="btnRefresh" title="Aggiorna treni e bus">⟳</button>
+        <button class="btn btn-primary btn-search" id="btnSearch">Cerca</button>
       </div>
     </header>
 
