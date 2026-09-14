@@ -1,9 +1,8 @@
-// Server unico: serve l'app (file statici) E fa da proxy per lefrecce.it
+// Server unico: serve l'app (file statici) E fa da proxy per viaggiatreno.it
 // Stessa origine = niente CORS, niente GitHub Pages necessario.
 //
 //  - Desktop:  http://localhost:8787
-//  - Mobile:   esponi con tunnel HTTPS (vedi README.md)
-//              cloudflared tunnel --url http://localhost:8787
+//  - Mobile:   esponi con tunnel HTTPS (cloudflared) oppure build APK Capacitor
 //
 // Nessuna dipendenza, richiede Node 18+ (fetch integrato)
 
@@ -14,11 +13,11 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 8787;
-const TARGET = 'https://www.lefrecce.it/Channels.Website.BFF.WEB/website/ticket/solutions';
+const UPSTREAM = 'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, ngrok-skip-browser-warning',
   'Access-Control-Max-Age': '86400'
 };
@@ -62,33 +61,26 @@ function serveStatic(pathname, res) {
   });
 }
 
-// --- Proxy lefrecce.it ---
+// --- Proxy viaggiatreno ---
 
 function handleProxy(req, res) {
-  let body = '';
-  req.on('data', (chunk) => (body += chunk));
-  req.on('end', async () => {
-    try {
-      const upstream = await fetch(TARGET, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        },
-        body
-      });
+  // Inoltra tutto il path (es. /partenze/S08217/<data>) a viaggiatreno
+  const targetUrl = UPSTREAM + req.url;
 
+  fetch(targetUrl, { method: 'GET' })
+    .then(async (upstream) => {
       const text = await upstream.text();
-      console.log(new Date().toLocaleTimeString('it-IT'), 'API ->', upstream.status);
-      res.writeHead(upstream.status, { ...CORS, 'Content-Type': 'application/json' });
+      res.writeHead(upstream.status, {
+        ...CORS,
+        'Content-Type': 'application/json'
+      });
       res.end(text);
-    } catch (err) {
-      console.error('Errore upstream:', err.message);
+    })
+    .catch((err) => {
+      console.error('Errore proxy viaggiatreno:', err.message);
       res.writeHead(502, { ...CORS, 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));
-    }
-  });
+    });
 }
 
 // --- Server ---
@@ -101,7 +93,10 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
-  if (req.method === 'POST') {
+  // Richieste API → proxy viaggiatreno
+  if (pathname.startsWith('/api/')) {
+    // /api/partenze/S08217/<data> → upstream
+    req.url = pathname.slice(4); // rimuovi /api
     return handleProxy(req, res);
   }
 
@@ -115,7 +110,8 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log('Treno App attiva su http://localhost:' + PORT);
-  console.log('Per il mobile avvia il tunnel (vedi README.md):');
+  console.log('API viaggiatreno proxy su /api/*');
+  console.log('Per il mobile avvia il tunnel:');
   console.log('  cloudflared tunnel --url http://localhost:' + PORT);
   console.log('Ctrl+C per fermare');
 });

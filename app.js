@@ -1,40 +1,15 @@
-// === CONFIGURAZIONE API ===
-// - APK (Capacitor): HTTP nativa via CapacitorHttp -> niente CORS, niente PC.
-// - Web/PWA: fetch same-origin verso il server unico (local-proxy.mjs, :8787).
-const NATIVE_API_URL = 'https://www.lefrecce.it/Channels.Website.BFF.WEB/website/ticket/solutions';
-const WEB_API_URL = '/';
+// === CONFIGURAZIONE ===
+// Fonte dati: viaggiatreno.it (dati real-time FS, no CORS con proxy/APK nativo)
+const VT_BASE = 'http://www.viaggiatreno.it/infomobilita/resteasy/viaggiatreno';
+const API_PREFIX = '/api'; // proxy locale (web). In APK nativo chiamiamo VT_BASE direttamente
 
-// === PERCORSI ===
-const ROUTES = {
-  andata: { from: 'Roma Tiburtina', to: 'Ponte Di Nona', dep: 830008217, arr: 830013705 },
-  ritorno: { from: 'Ponte Di Nona', to: 'Roma Tiburtina', dep: 830013705, arr: 830008217 }
+const STATIONS = {
+  tiburtina: { code: 'S08217', name: 'Roma Tiburtina' },
+  ponte:     { code: 'S08529', name: 'Ponte Di Nona' }
 };
 
-let currentDir = 'andata';
+let currentDir = 'andata'; // andata: Tiburtina → Ponte di Nona | ritorno: Ponte di Nona → Tiburtina
 try { currentDir = localStorage.getItem('trenoDir') === 'ritorno' ? 'ritorno' : 'andata'; } catch {}
-
-const PAYLOAD_TEMPLATE = {
-  departureLocationId: 830008217,
-  arrivalLocationId: 830013705,
-  departureTime: '',
-  adults: 1,
-  children: 0,
-  criteria: {
-    frecceOnly: false,
-    regionalOnly: false,
-    intercityOnly: false,
-    tourismOnly: false,
-    noChanges: false,
-    order: 'DEPARTURE_DATE',
-    offset: 0,
-    limit: 10
-  },
-  advancedSearchRequest: {
-    bestFare: false,
-    bikeFilter: false,
-    forwardDiscountCodes: []
-  }
-};
 
 function getCapacitorHttp() {
   try {
@@ -46,116 +21,122 @@ function getCapacitorHttp() {
 
 // --- Data/ora ricerca ---
 
-function getRoundedNow() {
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+// Formato richiesto da viaggiatreno: "Mon Sep 14 2026 08:04:44 GMT+0200"
+function formatVTDate(date) {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const offset = -date.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const hh = pad2(Math.floor(Math.abs(offset) / 60));
+  const mm = pad2(Math.abs(offset) % 60);
+  return encodeURIComponent(
+    `${days[date.getDay()]} ${months[date.getMonth()]} ${date.getDate()} ${date.getFullYear()} ` +
+    `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())} GMT${sign}${hh}${mm}`
+  );
+}
+
+function getNow() {
   const now = new Date();
   now.setSeconds(0, 0);
   return now;
 }
 
 function setDefaultInputs() {
-  const d = getRoundedNow();
-  const date = d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
-  const time = String(d.getHours()).padStart(2, '0') + ':' +
-    String(d.getMinutes()).padStart(2, '0');
+  const d = getNow();
+  const date = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  const time = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
   document.getElementById('inputDate').value = date;
   document.getElementById('inputTime').value = time;
 }
 
-function getChosenDeparture() {
+function getChosenDate() {
   const date = document.getElementById('inputDate').value;
   const time = document.getElementById('inputTime').value;
   if (/^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(time)) {
-    return date + 'T' + time + ':00.000';
+    const [y, m, d] = date.split('-').map(Number);
+    const [hh, mm] = time.split(':').map(Number);
+    return new Date(y, m - 1, d, hh, mm, 0, 0);
   }
-  // fallback: adesso arrotondato all'ora successiva
-  return formatToAPIDate(getRoundedNow());
+  return getNow();
 }
 
-function formatChosen(dateStr) {
-  // "2026-09-14T16:00:00.000" -> "lun 14 set, 16:00"
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(dateStr);
-  if (!m) return dateStr;
-  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
-  return d.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' }) +
-    ' · ' + m[4] + ':' + m[5];
-}
+// --- Chiamate API viaggiatreno ---
 
-// --- Utility formattazione ---
-
-function formatToAPIDate(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  const h = String(date.getHours()).padStart(2, '0');
-  const min = String(date.getMinutes()).padStart(2, '0');
-  return y + '-' + m + '-' + d + 'T' + h + ':' + min + ':00.000';
-}
-
-function formatTime(dateStr) {
-  const d = new Date(dateStr);
-  return d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDate(dateStr) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' });
-}
-
-function getCountdownParts(targetDate, now) {
-  const diff = targetDate.getTime() - now.getTime();
-  if (diff <= 0) return null;
-  const totalSeconds = Math.floor(diff / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return { hours, minutes, seconds };
-}
-
-function pad2(n) { return String(n).padStart(2, '0'); }
-
-// --- Chiamata API (dual-mode: nativa APK / web same-origin) ---
-
-async function searchTrains(departureTime) {
-  const route = ROUTES[currentDir] || ROUTES.andata;
-  const payload = {
-    ...PAYLOAD_TEMPLATE,
-    departureLocationId: route.dep,
-    arrivalLocationId: route.arr,
-    departureTime: departureTime
-  };
-
+async function vtGet(endpoint) {
+  // endpoint es: /partenze/S08217/<encodedDate>
+  const url = VT_BASE + endpoint;
   const http = getCapacitorHttp();
+
   if (http) {
-    const response = await http.request({
-      url: NATIVE_API_URL,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      data: payload
-    });
+    const response = await http.request({ url, method: 'GET', headers: { 'Accept': 'application/json' } });
     if (response.status < 200 || response.status >= 300) {
       throw new Error('Errore API: ' + response.status);
     }
     return typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
   }
 
-  const response = await fetch(WEB_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'ngrok-skip-browser-warning': '1'
-    },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) {
-    throw new Error('Errore API: ' + response.status + ' ' + response.statusText);
-  }
+  // Web: via proxy locale
+  const proxyUrl = API_PREFIX + endpoint;
+  const response = await fetch(proxyUrl);
+  if (!response.ok) throw new Error('Errore API: ' + response.status);
   return response.json();
+}
+
+async function searchTrains() {
+  const date = getChosenDate();
+  const dateParam = formatVTDate(date);
+
+  const isAndata = currentDir === 'andata';
+  const originCode = isAndata ? STATIONS.tiburtina.code : STATIONS.ponte.code;
+  const destCode = isAndata ? STATIONS.ponte.code : STATIONS.tiburtina.code;
+
+  // Partenze dalla stazione di origine + arrivi alla stazione di destinazione
+  const [departures, arrivals] = await Promise.all([
+    vtGet(`/partenze/${originCode}/${dateParam}`),
+    vtGet(`/arrivi/${destCode}/${dateParam}`)
+  ]);
+
+  // Mappa arrivi per numero treno (solo regionali)
+  const arrivalMap = {};
+  (arrivals || []).forEach(a => {
+    if (a.categoria === 'REG' && a.numeroTreno != null) {
+      arrivalMap[a.numeroTreno] = a;
+    }
+  });
+
+  // Filtra partenze regionali che hanno un arrivo corrispondente alla destinazione
+  const now = Date.now();
+  const solutions = (departures || [])
+    .filter(d => d.categoria === 'REG' && d.numeroTreno != null)
+    .map(d => {
+      const arr = arrivalMap[d.numeroTreno];
+      if (!arr) return null;
+      const depMs = d.orarioPartenza;
+      const arrMs = arr.orarioArrivo;
+      if (!depMs || !arrMs) return null;
+      if (depMs < now) return null; // già partito
+      const durationMs = arrMs - depMs;
+      return {
+        trainNumber: d.numeroTreno,
+        category: (d.categoriaDescrizione || d.categoria || '').trim(),
+        formattedTrain: d.compNumeroTreno || (d.categoria + ' ' + d.numeroTreno),
+        departureMs: depMs,
+        arrivalMs: arrMs,
+        durationMs: durationMs,
+        delay: d.ritardo || 0,
+        platform: d.binarioProgrammatoPartenzaDescrizione || d.binarioEffettivoPartenzaDescrizione || '',
+        nonPartito: d.nonPartito !== false,
+        origin: isAndata ? STATIONS.tiburtina.name : STATIONS.ponte.name,
+        destination: isAndata ? STATIONS.ponte.name : STATIONS.tiburtina.name
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.departureMs - b.departureMs)
+    .slice(0, 5);
+
+  return solutions;
 }
 
 // --- Render soluzioni ---
@@ -163,29 +144,51 @@ async function searchTrains(departureTime) {
 let activeSolutions = [];
 const countdownIntervals = [];
 
-function renderSolutions(data) {
+function formatTime(ms) {
+  const d = new Date(ms);
+  return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+
+function formatDate(ms) {
+  const d = new Date(ms);
+  return d.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' });
+}
+
+function formatDuration(ms) {
+  const totalMin = Math.round(ms / 60000);
+  if (totalMin < 60) return totalMin + ' min';
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m > 0 ? h + 'h ' + m + 'min' : h + 'h';
+}
+
+function getCountdownParts(targetMs, nowMs) {
+  const diff = targetMs - nowMs;
+  if (diff <= 0) return null;
+  const totalSec = Math.floor(diff / 1000);
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  return { hours, minutes, seconds };
+}
+
+function renderSolutions(solutions) {
   const container = document.getElementById('solutions');
   const info = document.getElementById('resultsInfo');
   container.innerHTML = '';
 
-  const all = (data && data.solutions) || [];
-  const direct = all
-    .slice(0, 3)
-    .map(item => item.solution)
-    .filter(s => s && s.trains && s.trains.length === 1);
-
-  if (direct.length === 0) {
+  if (!solutions || solutions.length === 0) {
     info.style.display = 'none';
-    container.innerHTML = '<div class="error"><p>Nessun treno diretto trovato. Prova a cambiare data o ora.</p></div>';
+    container.innerHTML = '<div class="error"><p>Nessun treno regionale trovato. Prova a cambiare data o ora.</p></div>';
     return;
   }
 
-  activeSolutions = direct;
+  activeSolutions = solutions;
   info.style.display = 'block';
-  info.textContent = direct.length + (direct.length === 1 ? ' treno diretto' : ' treni diretti') + ' · tocca la card per i dettagli';
+  info.textContent = solutions.length + (solutions.length === 1 ? ' treno regionale' : ' treni regionali') + ' · tocca la card per i dettagli';
 
-  direct.forEach((solution, i) => {
-    container.appendChild(createCard(solution, i, i === 0));
+  solutions.forEach((sol, i) => {
+    container.appendChild(createCard(sol, i, i === 0));
   });
 }
 
@@ -195,36 +198,40 @@ function escapeHtml(s) {
   }[c]));
 }
 
-function createCard(solution, index, isNext) {
+function createCard(sol, index, isNext) {
   const div = document.createElement('div');
   div.className = 'card' + (isNext ? ' next' : '');
   div.dataset.idx = String(index);
 
-  const train = solution.trains[0];
-  const trainLabel = (train.acronym || '') + ' ' + (train.description || '');
+  const delayText = sol.delay > 0 ? '+' + sol.delay + ' min' : 'in orario';
+  const delayClass = sol.delay > 0 ? ' style="color:var(--accent)"' : ' style="color:var(--good)"';
 
   div.innerHTML = `
     <div class="card-top">
-      <span class="train-chip">${escapeHtml(trainLabel)}</span>
+      <span class="train-chip">${escapeHtml(sol.formattedTrain)}</span>
       ${isNext ? '<span class="next-chip">PROSSIMO</span>' : ''}
-      <span class="dur-chip">${escapeHtml(solution.duration || '')}</span>
+      <span class="dur-chip">${escapeHtml(formatDuration(sol.durationMs))}</span>
     </div>
     <div class="times-row">
       <div class="t-block">
         <span class="t-label">Partenza</span>
-        <span class="t-time">${formatTime(solution.departureTime)}</span>
-        <span class="t-date">${formatDate(solution.departureTime)}</span>
+        <span class="t-time">${formatTime(sol.departureMs)}</span>
+        <span class="t-date">${formatDate(sol.departureMs)}</span>
       </div>
       <span class="t-arrow">→</span>
       <div class="t-block right">
         <span class="t-label">Arrivo</span>
-        <span class="t-time">${formatTime(solution.arrivalTime)}</span>
-        <span class="t-date">${formatDate(solution.arrivalTime)}</span>
+        <span class="t-time">${formatTime(sol.arrivalMs)}</span>
+        <span class="t-date">${formatDate(sol.arrivalMs)}</span>
       </div>
     </div>
     <div class="cd-row">
       <span class="cd-label">Parte tra</span>
       <span class="cd-value" id="cd-${index}">--:--:--</span>
+    </div>
+    <div class="card-meta">
+      <span class="meta-item"${delayClass}>${escapeHtml(delayText)}</span>
+      ${sol.platform ? `<span class="meta-item">Bin. ${escapeHtml(sol.platform)}</span>` : ''}
     </div>
     <button class="btn-details" type="button">Dettagli</button>
   `;
@@ -238,13 +245,12 @@ function startCountdowns() {
   countdownIntervals.forEach(id => clearInterval(id));
   countdownIntervals.length = 0;
 
-  activeSolutions.forEach((solution, index) => {
-    const depTarget = new Date(solution.departureTime);
+  activeSolutions.forEach((sol, index) => {
     const el = document.getElementById('cd-' + index);
     if (!el) return;
 
     const tick = () => {
-      const parts = getCountdownParts(depTarget, new Date());
+      const parts = getCountdownParts(sol.departureMs, Date.now());
       if (!parts) {
         el.textContent = '✓ partito';
         el.classList.add('done');
@@ -265,56 +271,40 @@ function openSheet(index) {
   const s = activeSolutions[index];
   if (!s) return;
 
-  const train = s.trains[0];
-  const price = s.price && typeof s.price.amount === 'number'
-    ? s.price.amount.toFixed(2) + ' €' : '—';
-  const grid = s.grids && s.grids[0];
-  const service = grid && grid.services && grid.services[0];
-  const offer = service && service.offers && service.offers[0];
-  const status = s.status === 'SALEABLE' ? 'Acquistabile' : (s.status || '—');
-
-  let legsHtml = '';
-  if (s.nodes && s.nodes.length) {
-    legsHtml = s.nodes.map(n =>
-      '<div class="leg">' +
-        '<span class="train-name">' + escapeHtml(((n.train && n.train.acronym) || '') + ' ' + ((n.train && n.train.description) || '')) + '</span>' +
-        '<span class="leg-times">' + formatTime(n.departureTime) + ' → ' + formatTime(n.arrivalTime) + '</span>' +
-      '</div>'
-    ).join('');
-  }
+  const delayText = s.delay > 0 ? '+' + s.delay + ' min di ritardo' : 'In orario';
+  const delayClass = s.delay > 0 ? 'accent' : 'good';
 
   document.getElementById('sheetContent').innerHTML = `
     <div class="sheet-title">${escapeHtml(s.origin)} → ${escapeHtml(s.destination)}</div>
-    <div class="sheet-sub">${escapeHtml((train.denomination || '') + ' ' + (train.description || ''))} · ${escapeHtml(s.duration || '')}</div>
+    <div class="sheet-sub">${escapeHtml(s.formattedTrain)} · ${escapeHtml(formatDuration(s.durationMs))}</div>
     <div class="sheet-grid">
       <div class="info-box">
         <div class="k">Partenza</div>
-        <div class="v big">${formatTime(s.departureTime)}</div>
-        <div class="v">${formatDate(s.departureTime)}</div>
+        <div class="v big">${formatTime(s.departureMs)}</div>
+        <div class="v">${formatDate(s.departureMs)}</div>
       </div>
       <div class="info-box">
         <div class="k">Arrivo</div>
-        <div class="v big">${formatTime(s.arrivalTime)}</div>
-        <div class="v">${formatDate(s.arrivalTime)}</div>
+        <div class="v big">${formatTime(s.arrivalMs)}</div>
+        <div class="v">${formatDate(s.arrivalMs)}</div>
       </div>
       <div class="info-box">
-        <div class="k">Prezzo</div>
-        <div class="v big accent">${price}</div>
+        <div class="k">Ritardo</div>
+        <div class="v big ${delayClass}">${escapeHtml(delayText)}</div>
       </div>
       <div class="info-box">
-        <div class="k">Stato</div>
-        <div class="v ${s.status === 'SALEABLE' ? 'good' : ''}">${escapeHtml(status)}</div>
+        <div class="k">Binario</div>
+        <div class="v big">${escapeHtml(s.platform || '—')}</div>
       </div>
       <div class="info-box">
-        <div class="k">Classe</div>
-        <div class="v">${escapeHtml((service && service.shortName) || '—')}</div>
+        <div class="k">Categoria</div>
+        <div class="v">${escapeHtml(s.category || 'Regionale')}</div>
       </div>
       <div class="info-box">
-        <div class="k">Tariffa</div>
-        <div class="v">${escapeHtml((offer && offer.name) || '—')}</div>
+        <div class="k">Numero treno</div>
+        <div class="v">${escapeHtml(s.trainNumber)}</div>
       </div>
     </div>
-    ${legsHtml ? '<div class="legs"><div class="legs-title">Tratte</div>' + legsHtml + '</div>' : ''}
   `;
 
   document.getElementById('sheetBackdrop').classList.add('open');
@@ -327,9 +317,9 @@ function closeSheet() {
 // --- Percorso (direzione) ---
 
 function updateRouteUI() {
-  const route = ROUTES[currentDir] || ROUTES.andata;
-  document.getElementById('routeFrom').textContent = route.from;
-  document.getElementById('routeTo').textContent = route.to;
+  const isAndata = currentDir === 'andata';
+  document.getElementById('routeFrom').textContent = isAndata ? STATIONS.tiburtina.name : STATIONS.ponte.name;
+  document.getElementById('routeTo').textContent = isAndata ? STATIONS.ponte.name : STATIONS.tiburtina.name;
 }
 
 function swapDirection() {
@@ -339,7 +329,7 @@ function swapDirection() {
   doSearch();
 }
 
-// --- Orologio realtime (in alto a destra) ---
+// --- Orologio realtime ---
 
 function updateClock() {
   const now = new Date();
@@ -356,8 +346,6 @@ async function doSearch() {
   const solutions = document.getElementById('solutions');
   const info = document.getElementById('resultsInfo');
 
-  const departureTime = getChosenDeparture();
-
   loading.style.display = 'flex';
   error.style.display = 'none';
   solutions.innerHTML = '';
@@ -368,9 +356,9 @@ async function doSearch() {
   activeSolutions = [];
 
   try {
-    const data = await searchTrains(departureTime);
+    const solutions = await searchTrains();
     loading.style.display = 'none';
-    renderSolutions(data);
+    renderSolutions(solutions);
     startCountdowns();
   } catch (err) {
     loading.style.display = 'none';
