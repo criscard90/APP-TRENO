@@ -332,9 +332,8 @@ const pbOne = (fs, n) => fs.find(f => f.field === n);
 const pbStr = f => (f && f.data ? new TextDecoder().decode(f.data) : null);
 const pbInt = f => (f && f.varint !== undefined ? Number(f.varint) : null);
 
-// Estrae i movimenti del bus 555 alla palina 82110 (capolinea per ENTRAMBE le direzioni):
-// - dir 0 = parte da qui verso Lunghezza/Pantano (il bus che prendi)
-// - dir 1 = arriva qui in capolinea (poi riparte verso Lunghezza)
+// Estrae le prossime partenze del bus 555 da Ponte Di Nona (dir 0, stop 82110)
+// e calcola quante fermate manca il prossimo bus
 function parseBus555RT(pb) {
   const top = pbDecodeFields(pb, 0, pb.length);
   const now = Date.now() / 1000;
@@ -350,18 +349,25 @@ function parseBus555RT(pb) {
     if (!tripRaw) continue;
     const trip = pbDecodeFields(tripRaw.data, 0, tripRaw.data.length);
     if (pbStr(pbOne(trip, 5)) !== '555') continue;
-    const dir = pbInt(pbOne(trip, 6));
-    if (dir !== 0 && dir !== 1) continue;
+    if (pbInt(pbOne(trip, 6)) !== 0) continue; // solo partenze da capolinea (verso Lunghezza)
 
-    for (const stuRaw of pbAll(tu, 2)) { // StopTimeUpdate
-      const stu = pbDecodeFields(stuRaw.data, 0, stuRaw.data.length);
-      if (pbStr(pbOne(stu, 4)) !== BUS_STOP_ID) continue;
-      const arrRaw = pbOne(stu, 2); // arrival
-      if (!arrRaw) continue;
-      const arr = pbDecodeFields(arrRaw.data, 0, arrRaw.data.length);
-      const epoch = pbInt(pbOne(arr, 2));
-      if (epoch && epoch - now > -60) out.push({ epoch, dir });
-    }
+    const stus = pbAll(tu, 2).map(s => pbDecodeFields(s.data, 0, s.data.length));
+    const myStop = stus.find(s => pbStr(pbOne(s, 4)) === BUS_STOP_ID);
+    if (!myStop) continue;
+    const arrRaw = pbOne(myStop, 2);
+    if (!arrRaw) continue;
+    const arr = pbDecodeFields(arrRaw.data, 0, arrRaw.data.length);
+    const epoch = pbInt(pbOne(arr, 2));
+    if (!epoch || epoch - now <= -60) continue;
+
+    // fermate di distanza: quante fermate ancora da servire prima della nostra
+    const mySeq = pbInt(pbOne(myStop, 1));
+    const stopsAway = stus.filter(s => {
+      const seq = pbInt(pbOne(s, 1));
+      return seq !== null && mySeq !== null && seq < mySeq;
+    }).length;
+
+    out.push({ epoch, stopsAway });
   }
   return out.sort((a, b) => a.epoch - b.epoch);
 }
@@ -426,18 +432,18 @@ function renderBusInfo() {
   const el = document.getElementById('bus555');
   if (!el) return;
   if (busArrivals === null) {
-    el.innerHTML = '🚌 <b>555</b> (capolinea Ponte Di Nona) · <b>tocca qui per aggiornare</b>';
+    el.innerHTML = '🚌 <b>555</b> · tocca qui per aggiornare';
   } else if (busArrivals.length === 0) {
-    el.innerHTML = '🚌 Nessun <b>555</b> imminente alla palina (il prossimo non è ancora nel feed RT)';
+    el.innerHTML = '🚌 <b>555</b> · nessuna partenza imminente nel feed RT';
   } else {
     const now = Date.now() / 1000;
-    const parts = busArrivals.slice(0, 3).map(m => {
-      const min = Math.max(0, Math.round((m.epoch - now) / 60));
-      const t = new Date(m.epoch * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-      if (m.dir === 0) return 'parte <b>verso Lunghezza</b> tra ' + min + ' min (' + t + ')';
-      return '<b>in arrivo</b> al capolinea tra ' + min + ' min (' + t + ') → poi verso Lunghezza';
-    });
-    el.innerHTML = '🚌 <b>555</b> · ' + parts.join(' · ');
+    const first = busArrivals[0];
+    const min = Math.max(0, Math.round((first.epoch - now) / 60));
+    const eta = min <= 0 ? 'in palina' : first.stopsAway + ' Ferm. (' + min + "')";
+    const times = busArrivals.slice(0, 3)
+      .map(m => new Date(m.epoch * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }))
+      .join(' - ');
+    el.innerHTML = '🚌 <b>555</b> ' + eta + ' · partenze da Ponte Di Nona: <b>' + times + '</b>';
   }
 }
 
