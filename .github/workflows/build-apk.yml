@@ -34,36 +34,25 @@ jobs:
       - name: Aggiunge piattaforma Android
         run: npx cap add android
 
-      - name: Sincronizza file web in Android
-        run: npx cap sync android
-
-      - name: Abilita HTTP in chiaro (viaggiatreno.it usa http://)
+      - name: Personalizza icone e manifest (prima del sync)
         run: |
-          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
-
-      - name: Rimuove icone Capacitor di default
-        run: |
-          # Le icone adaptive (anydpi-v26) hanno priorità sui PNG: le cancello
+          # Rimuove SOLO le icone adaptive (anydpi-v26), che hanno priorità sui PNG
           rm -rf android/app/src/main/res/mipmap-anydpi-v26
-          # Rimuove i PNG di default di Capacitor (non le cartelle!)
-          rm -f android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-          rm -f android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
-          rm -f android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-          rm -f android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
-          rm -f android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          rm -f android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
-          rm -f android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          rm -f android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
-          rm -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          rm -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
-
-      - name: Copia icone Android
-        run: |
+          # Sovrascrive i PNG di default con le icone personalizzate
           cp resources/android-icons/mipmap-mdpi.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
           cp resources/android-icons/mipmap-hdpi.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
           cp resources/android-icons/mipmap-xhdpi.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           cp resources/android-icons/mipmap-xxhdpi.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           cp resources/android-icons/mipmap-xxxhdpi.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          # Abilita HTTP in chiaro per viaggiatreno.it tramite network security config
+          mkdir -p android/app/src/main/res/xml
+          cp resources/android/network_security_config.xml android/app/src/main/res/xml/network_security_config.xml
+          # Inietta il riferimento nel manifest (dopo il tag <manifest ...>)
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
+          sed -i 's/<application/<application android:networkSecurityConfig="@xml\/network_security_config"/' android/app/src/main/AndroidManifest.xml
+
+      - name: Sincronizza file web in Android
+        run: npx cap sync android
 
       - name: Compila APK debug
         run: |
@@ -75,4 +64,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: treno-app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug-apk
