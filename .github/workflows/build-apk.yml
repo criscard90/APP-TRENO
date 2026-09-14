@@ -34,11 +34,18 @@ jobs:
       - name: Aggiunge piattaforma Android
         run: npx cap add android
 
-      - name: Installa sharp (generazione icone)
-        run: npm install --no-save sharp
-
-      - name: Genera icone Android
-        run: node scripts/generate-icons.js
+      - name: Copia icone Android
+        run: |
+          mkdir -p android/app/src/main/res/mipmap-mdpi
+          mkdir -p android/app/src/main/res/mipmap-hdpi
+          mkdir -p android/app/src/main/res/mipmap-xhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxhdpi
+          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
+          cp resources/android-icons/mipmap-mdpi.png android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          cp resources/android-icons/mipmap-hdpi.png android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          cp resources/android-icons/mipmap-xhdpi.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          cp resources/android-icons/mipmap-xxhdpi.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          cp resources/android-icons/mipmap-xxxhdpi.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
       - name: Sincronizza file web in Android
         run: npx cap sync android
