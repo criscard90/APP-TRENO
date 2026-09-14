@@ -34,6 +34,13 @@ jobs:
       - name: Aggiunge piattaforma Android
         run: npx cap add android
 
+      - name: Sincronizza file web in Android
+        run: npx cap sync android
+
+      - name: Abilita HTTP in chiaro (viaggiatreno.it usa http://)
+        run: |
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+
       - name: Copia icone Android
         run: |
           mkdir -p android/app/src/main/res/mipmap-mdpi
@@ -46,9 +53,6 @@ jobs:
           cp resources/android-icons/mipmap-xhdpi.png android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
           cp resources/android-icons/mipmap-xxhdpi.png android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
           cp resources/android-icons/mipmap-xxxhdpi.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-
-      - name: Sincronizza file web in Android
-        run: npx cap sync android
 
       - name: Compila APK debug
         run: |
