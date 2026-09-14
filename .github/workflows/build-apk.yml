@@ -41,6 +41,23 @@ jobs:
         run: |
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
 
+      - name: Rimuove icone Capacitor di default
+        run: |
+          # Le icone adaptive (anydpi-v26) hanno priorità sui PNG: le cancello
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
+          # Rimuove anche i PNG di default nelle varie densità e la cartella base mipmap
+          rm -f android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          rm -f android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
+          rm -f android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+          rm -f android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
+          rm -f android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          rm -f android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
+          rm -f android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          rm -f android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+          rm -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          rm -f android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+          rm -rf android/app/src/main/res/mipmap
+
       - name: Copia icone Android
         run: |
           mkdir -p android/app/src/main/res/mipmap-mdpi
