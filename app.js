@@ -267,56 +267,149 @@ function startCountdowns() {
   });
 }
 
-// --- Bus 555 (palina Ponte Di Nona 82110, romamobile.it) ---
+// --- Bus 555 (GTFS-RT ufficiale romamobilita.it, palina Ponte Di Nona 82110) ---
 
-const PALINA_URL = 'https://romamobile.it/paline/palina/82110?nav=3';
-const BUS_PROXY = '/bus555'; // via proxy locale (web). In APK nativo chiamiamo PALINA_URL direttamente
+const BUS_RT_URL = 'https://romamobilita.it/sites/default/files/rome_rtgtfs_trip_updates_feed.pb';
+const BUS_PROXY = '/bus555rt'; // proxy locale filtrato (web). In APK chiamiamo BUS_RT_URL direttamente
+const BUS_STOP_ID = '82110';   // PONTE DI NONA (FL2)
+const BUS_DIR = 0;             // 0 = verso Lunghezza/Pantano (il bus che prendi a Ponte Di Nona)
 let busIntervalId = null;
+let busRenderId = null;
+let busArrivals = null; // [{arrivalEpoch}] della dir 0, già ordinate
 
-function parseBus555(html) {
-  // Esempio: <span class="linea">555</span> ... 6 Ferm. (9&#39;)
-  const m = html.match(/class="linea">\s*555\s*<\/span>[\s\S]{0,400}?(\d+)\s*Ferm\.\s*\((\d+)&#39;\)/i);
-  if (!m) return null;
-  // Direzione bus: cerca <span class="b">...</span> (Direzione) vicino al blocco del 555
-  const near = html.slice(m.index, m.index + 800);
-  const dir = near.match(/<span class="b">[^<]*<\/span>\s*\(([^)<]+)\)/i);
-  return { stops: Number(m[1]), minutes: Number(m[2]), destination: dir ? dir[1].trim() : '' };
+function pbReadVarint(b, pos) {
+  let result = 0n, shift = 0n;
+  while (true) {
+    if (pos >= b.length) throw new Error('varint overflow');
+    const byte = b[pos++];
+    result |= BigInt(byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) break;
+    shift += 7n;
+  }
+  return { value: result, next: pos };
+}
+
+function pbDecodeFields(b, start, end) {
+  const fields = [];
+  let pos = start;
+  while (pos < end) {
+    const tag = pbReadVarint(b, pos);
+    pos = tag.next;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+    if (fieldNumber === 0) break;
+    if (wireType === 0) {
+      const v = pbReadVarint(b, pos);
+      pos = v.next;
+      fields.push({ field: fieldNumber, varint: v.value });
+    } else if (wireType === 2) {
+      const len = pbReadVarint(b, pos);
+      pos = len.next;
+      const l = Number(len.value);
+      if (pos + l > end) break;
+      fields.push({ field: fieldNumber, data: b.subarray(pos, pos + l) });
+      pos += l;
+    } else if (wireType === 5) pos += 4;
+    else if (wireType === 1) pos += 8;
+    else break;
+  }
+  return fields;
+}
+
+const pbAll = (fs, n) => fs.filter(f => f.field === n);
+const pbOne = (fs, n) => fs.find(f => f.field === n);
+const pbStr = f => (f && f.data ? new TextDecoder().decode(f.data) : null);
+const pbInt = f => (f && f.varint !== undefined ? Number(f.varint) : null);
+
+// Estrae gli arrivi del bus 555 (dir 0, verso Lunghezza) alla palina 82110
+function parseBus555RT(pb) {
+  const top = pbDecodeFields(pb, 0, pb.length);
+  const now = Date.now() / 1000;
+  const out = [];
+
+  for (const entRaw of pbAll(top, 2)) { // FeedEntity
+    const ef = pbDecodeFields(entRaw.data, 0, entRaw.data.length);
+    const tuRaw = pbOne(ef, 3); // TripUpdate
+    if (!tuRaw) continue;
+    const tu = pbDecodeFields(tuRaw.data, 0, tuRaw.data.length);
+
+    const tripRaw = pbOne(tu, 1); // TripDescriptor
+    if (!tripRaw) continue;
+    const trip = pbDecodeFields(tripRaw.data, 0, tripRaw.data.length);
+    if (pbStr(pbOne(trip, 5)) !== '555') continue;
+    if (pbInt(pbOne(trip, 6)) !== BUS_DIR) continue;
+
+    for (const stuRaw of pbAll(tu, 2)) { // StopTimeUpdate
+      const stu = pbDecodeFields(stuRaw.data, 0, stuRaw.data.length);
+      if (pbStr(pbOne(stu, 4)) !== BUS_STOP_ID) continue;
+      const arrRaw = pbOne(stu, 2); // arrival
+      if (!arrRaw) continue;
+      const arr = pbDecodeFields(arrRaw.data, 0, arrRaw.data.length);
+      const epoch = pbInt(pbOne(arr, 2));
+      if (epoch && epoch - now > -60) out.push(epoch);
+    }
+  }
+  return out.sort((a, b) => a - b);
 }
 
 async function fetchBus555() {
-  try {
-    const http = getCapacitorHttp();
-    if (http) {
-      const resp = await http.request({ url: PALINA_URL, method: 'GET' });
-      if (resp.status !== 200) return null;
-      return parseBus555(typeof resp.data === 'string' ? resp.data : '');
-    }
-    const resp = await fetch(BUS_PROXY);
-    if (!resp.ok) return null;
-    return parseBus555(await resp.text());
-  } catch {
-    return null;
+  const http = getCapacitorHttp();
+  if (http) {
+    const resp = await http.request({
+      url: BUS_RT_URL,
+      method: 'GET',
+      responseType: 'arraybuffer',
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    if (resp.status !== 200) return null;
+    let bytes;
+    if (resp.data instanceof ArrayBuffer) bytes = new Uint8Array(resp.data);
+    else if (resp.data && resp.data.buffer instanceof ArrayBuffer) bytes = new Uint8Array(resp.data.buffer);
+    else if (typeof resp.data === 'string') { // fallback base64
+      const bin = atob(resp.data);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    } else return null;
+    return parseBus555RT(bytes);
+  }
+  const resp = await fetch(BUS_PROXY);
+  if (!resp.ok) return null;
+  return parseBus555RT(new Uint8Array(await resp.arrayBuffer()));
+}
+
+function renderBusInfo() {
+  const el = document.getElementById('bus555');
+  if (!el) return;
+  if (busArrivals && busArrivals.length > 0) {
+    const now = Date.now() / 1000;
+    const first = busArrivals[0];
+    const min = Math.max(0, Math.round((first - now) / 60));
+    const t = new Date(first * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    el.innerHTML =
+      '🚌 Troverai il <b>555</b> verso Lunghezza: <b>tra ' + min + ' min</b> (arrivo ' + t + ')';
+  } else if (busArrivals) {
+    el.innerHTML = '🚌 Nessun <b>555</b> verso Lunghezza in arrivo alla palina di Ponte Di Nona';
+  } else {
+    el.innerHTML = '🚌 Bus 555: aggiornamento...';
   }
 }
 
 async function updateBusInfo() {
-  const el = document.getElementById('bus555');
-  if (!el) return;
-  const info = await fetchBus555();
-  if (info) {
-    el.innerHTML =
-      '🚌 Troverai il <b>555</b>' +
-      (info.destination ? ' verso ' + escapeHtml(info.destination) : '') +
-      ': <b>' + info.stops + ' Ferm. (' + info.minutes + '\')</b>';
-  } else {
-    el.innerHTML = '🚌 Nessun <b>555</b> in arrivo alla palina di Ponte Di Nona';
+  try {
+    const arrivals = await fetchBus555();
+    busArrivals = arrivals || [];
+  } catch {
+    busArrivals = busArrivals || [];
   }
+  renderBusInfo();
 }
 
 function startBusPolling() {
   if (busIntervalId) clearInterval(busIntervalId);
+  if (busRenderId) clearInterval(busRenderId);
   updateBusInfo();
-  busIntervalId = setInterval(updateBusInfo, 30000); // aggiornamento ogni 30s
+  busIntervalId = setInterval(updateBusInfo, 60000); // feed ufficiale aggiornato ogni ~60s
+  busRenderId = setInterval(renderBusInfo, 15000);   // ricalcolo minuti a schermo
 }
 
 // --- Scheda dettagli (bottom sheet) ---

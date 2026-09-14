@@ -83,37 +83,117 @@ function handleProxy(req, res) {
     });
 }
 
-// --- Proxy romamobile.it (palina bus Ponte Di Nona 82110) ---
+// --- Proxy GTFS-RT romamobilita.it (bus 555, dati ufficiali real-time) ---
+// Scarica il feed .pb (~880KB), lo filtra tenendo solo le entità della linea 555
+// e restituisce un protobuf ridotto (~1KB) con la stessa struttura.
 
-const BUS_URL = 'https://romamobile.it/paline/palina/82110?nav=3';
+const BUS_RT_URL = 'https://romamobilita.it/sites/default/files/rome_rtgtfs_trip_updates_feed.pb';
 
-function handleBusProxy(res) {
-  // romamobile.it a volte risponde 500 in modo intermittente: riprova fino a 4 volte
+function readVarintBuf(b, pos) {
+  let result = 0n, shift = 0n;
+  while (true) {
+    const byte = b[pos++];
+    result |= BigInt(byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) break;
+    shift += 7n;
+  }
+  return { value: result, next: pos };
+}
+
+function decodeFieldsBuf(b, start, end) {
+  const fields = [];
+  let pos = start;
+  while (pos < end) {
+    const tag = readVarintBuf(b, pos);
+    pos = tag.next;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+    if (fieldNumber === 0) break;
+    if (wireType === 0) {
+      const v = readVarintBuf(b, pos);
+      pos = v.next;
+      fields.push({ field: fieldNumber, varint: v.value });
+    } else if (wireType === 2) {
+      const len = readVarintBuf(b, pos);
+      pos = len.next;
+      const l = Number(len.value);
+      if (pos + l > end) break;
+      fields.push({ field: fieldNumber, data: b.subarray(pos, pos + l) });
+      pos += l;
+    } else if (wireType === 5) pos += 4;
+    else if (wireType === 1) pos += 8;
+    else break;
+  }
+  return fields;
+}
+
+function writeVarint(n) {
+  const bytes = [];
+  let v = BigInt(n);
+  do {
+    let b = Number(v & 0x7fn);
+    v >>= 7n;
+    if (v) b |= 0x80;
+    bytes.push(b);
+  } while (v);
+  return Buffer.from(bytes);
+}
+
+function lengthDelimited(field, data) {
+  return Buffer.concat([writeVarint((field << 3) | 2), writeVarint(data.length), data]);
+}
+
+function filterRoute555(pb) {
+  const top = decodeFieldsBuf(pb, 0, pb.length);
+  const header = top.find(f => f.field === 1);
+  const out = [];
+  if (header) out.push(lengthDelimited(1, header.data));
+  for (const ent of top.filter(f => f.field === 2)) {
+    const ef = decodeFieldsBuf(ent.data, 0, ent.data.length);
+    const tuRaw = ef.find(f => f.field === 3);
+    if (!tuRaw) continue;
+    const tu = decodeFieldsBuf(tuRaw.data, 0, tuRaw.data.length);
+    const tripRaw = tu.find(f => f.field === 1);
+    if (!tripRaw) continue;
+    const trip = decodeFieldsBuf(tripRaw.data, 0, tripRaw.data.length);
+    const routeId = trip.find(f => f.field === 5);
+    if (routeId && routeId.data && routeId.data.toString('utf8') === '555') {
+      out.push(lengthDelimited(2, ent.data));
+    }
+  }
+  return Buffer.concat(out);
+}
+
+function handleBusRtProxy(res) {
+  // romamobilita.it a volte risponde 5xx in modo intermittente: riprova fino a 4 volte
   const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
   const MAX_TRIES = 4;
   let attempt = 0;
 
   function tryFetch() {
     attempt++;
-    fetch(BUS_URL, { method: 'GET', headers: UA })
+    fetch(BUS_RT_URL, { method: 'GET', headers: UA })
       .then(async (upstream) => {
-        const text = await upstream.text();
         if (upstream.status >= 500 && attempt < MAX_TRIES) {
+          upstream.body?.cancel();
           setTimeout(tryFetch, 800);
           return;
         }
-        res.writeHead(upstream.status, {
-          ...CORS,
-          'Content-Type': 'text/html; charset=utf-8'
-        });
-        res.end(text);
+        if (upstream.status !== 200) {
+          res.writeHead(upstream.status, { ...CORS, 'Content-Type': 'text/plain' });
+          return res.end('Errore feed bus: HTTP ' + upstream.status);
+        }
+        const ab = await upstream.arrayBuffer();
+        const filtered = filterRoute555(Buffer.from(ab));
+        res.writeHead(200, { ...CORS, 'Content-Type': 'application/octet-stream' });
+        res.end(filtered);
       })
       .catch((err) => {
         if (attempt < MAX_TRIES) {
           setTimeout(tryFetch, 800);
           return;
         }
-        console.error('Errore proxy romamobile:', err.message);
+        console.error('Errore proxy GTFS-RT:', err.message);
         res.writeHead(502, { ...CORS, 'Content-Type': 'text/plain' });
         res.end('Errore proxy bus: ' + err.message);
       });
@@ -139,9 +219,9 @@ const server = http.createServer((req, res) => {
     return handleProxy(req, res);
   }
 
-  // Palina bus 555 (romamobile.it) → proxy
-  if (pathname === '/bus555') {
-    return handleBusProxy(res);
+  // Feed GTFS-RT bus 555 (romamobilita.it, dati ufficiali) → proxy filtrato
+  if (pathname === '/bus555rt') {
+    return handleBusRtProxy(res);
   }
 
   if (req.method === 'GET' || req.method === 'HEAD') {
