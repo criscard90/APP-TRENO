@@ -230,6 +230,7 @@ function createCard(sol, index, isNext) {
       <span class="cd-label">Parte tra</span>
       <span class="cd-value" id="cd-${index}">--:--:--</span>
     </div>
+    ${isNext && currentDir === 'andata' ? '<div class="bus-info" id="bus555"><span>🚌 Bus 555: aggiornamento...</span></div>' : ''}
     <div class="card-meta">
       <span class="meta-item"${delayClass}>${escapeHtml(delayText)}</span>
       ${sol.platform ? `<span class="meta-item">Bin. ${escapeHtml(sol.platform)}</span>` : ''}
@@ -264,6 +265,58 @@ function startCountdowns() {
     tick();
     countdownIntervals[index] = setInterval(tick, 1000);
   });
+}
+
+// --- Bus 555 (palina Ponte Di Nona 82110, romamobile.it) ---
+
+const PALINA_URL = 'https://romamobile.it/paline/palina/82110?nav=3';
+const BUS_PROXY = '/bus555'; // via proxy locale (web). In APK nativo chiamiamo PALINA_URL direttamente
+let busIntervalId = null;
+
+function parseBus555(html) {
+  // Esempio: <span class="linea">555</span> ... 6 Ferm. (9&#39;)
+  const m = html.match(/class="linea">\s*555\s*<\/span>[\s\S]{0,400}?(\d+)\s*Ferm\.\s*\((\d+)&#39;\)/i);
+  if (!m) return null;
+  // Direzione bus: cerca <span class="b">...</span> (Direzione) vicino al blocco del 555
+  const near = html.slice(m.index, m.index + 800);
+  const dir = near.match(/<span class="b">[^<]*<\/span>\s*\(([^)<]+)\)/i);
+  return { stops: Number(m[1]), minutes: Number(m[2]), destination: dir ? dir[1].trim() : '' };
+}
+
+async function fetchBus555() {
+  try {
+    const http = getCapacitorHttp();
+    if (http) {
+      const resp = await http.request({ url: PALINA_URL, method: 'GET' });
+      if (resp.status !== 200) return null;
+      return parseBus555(typeof resp.data === 'string' ? resp.data : '');
+    }
+    const resp = await fetch(BUS_PROXY);
+    if (!resp.ok) return null;
+    return parseBus555(await resp.text());
+  } catch {
+    return null;
+  }
+}
+
+async function updateBusInfo() {
+  const el = document.getElementById('bus555');
+  if (!el) return;
+  const info = await fetchBus555();
+  if (info) {
+    el.innerHTML =
+      '🚌 Troverai il <b>555</b>' +
+      (info.destination ? ' verso ' + escapeHtml(info.destination) : '') +
+      ': <b>' + info.stops + ' Ferm. (' + info.minutes + '\')</b>';
+  } else {
+    el.innerHTML = '🚌 Nessun <b>555</b> in arrivo alla palina di Ponte Di Nona';
+  }
+}
+
+function startBusPolling() {
+  if (busIntervalId) clearInterval(busIntervalId);
+  updateBusInfo();
+  busIntervalId = setInterval(updateBusInfo, 30000); // aggiornamento ogni 30s
 }
 
 // --- Scheda dettagli (bottom sheet) ---
@@ -385,6 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(updateClock, 1000);
 
   doSearch();
+  startBusPolling();
 
   document.getElementById('routeBadge').addEventListener('click', swapDirection);
   document.getElementById('btnSearch').addEventListener('click', doSearch);

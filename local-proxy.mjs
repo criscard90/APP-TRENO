@@ -83,6 +83,45 @@ function handleProxy(req, res) {
     });
 }
 
+// --- Proxy romamobile.it (palina bus Ponte Di Nona 82110) ---
+
+const BUS_URL = 'https://romamobile.it/paline/palina/82110?nav=3';
+
+function handleBusProxy(res) {
+  // romamobile.it a volte risponde 500 in modo intermittente: riprova fino a 4 volte
+  const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
+  const MAX_TRIES = 4;
+  let attempt = 0;
+
+  function tryFetch() {
+    attempt++;
+    fetch(BUS_URL, { method: 'GET', headers: UA })
+      .then(async (upstream) => {
+        const text = await upstream.text();
+        if (upstream.status >= 500 && attempt < MAX_TRIES) {
+          setTimeout(tryFetch, 800);
+          return;
+        }
+        res.writeHead(upstream.status, {
+          ...CORS,
+          'Content-Type': 'text/html; charset=utf-8'
+        });
+        res.end(text);
+      })
+      .catch((err) => {
+        if (attempt < MAX_TRIES) {
+          setTimeout(tryFetch, 800);
+          return;
+        }
+        console.error('Errore proxy romamobile:', err.message);
+        res.writeHead(502, { ...CORS, 'Content-Type': 'text/plain' });
+        res.end('Errore proxy bus: ' + err.message);
+      });
+  }
+
+  tryFetch();
+}
+
 // --- Server ---
 
 const server = http.createServer((req, res) => {
@@ -98,6 +137,11 @@ const server = http.createServer((req, res) => {
     // /api/partenze/S08217/<data> → upstream
     req.url = pathname.slice(4); // rimuovi /api
     return handleProxy(req, res);
+  }
+
+  // Palina bus 555 (romamobile.it) → proxy
+  if (pathname === '/bus555') {
+    return handleBusProxy(res);
   }
 
   if (req.method === 'GET' || req.method === 'HEAD') {

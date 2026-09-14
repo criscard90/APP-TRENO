@@ -397,6 +397,19 @@ body {
   flex-wrap: wrap;
 }
 
+.bus-info {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 170, 0, 0.12);
+  border: 1px solid rgba(255, 170, 0, 0.35);
+  color: #ffcc66;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.bus-info b { color: #ffd98a; font-weight: 800; }
+
 .meta-item {
   font-size: 12px;
   font-weight: 700;
