@@ -117,6 +117,7 @@ async function searchTrains() {
       const arrMs = arr.orarioArrivo;
       if (!depMs || !arrMs) return null;
       if (depMs < now) return null; // già partito
+      if (depMs >= arrMs) return null; // partenza dopo l'arrivo = treno nella direzione opposta, scarta
       const durationMs = arrMs - depMs;
       return {
         trainNumber: d.numeroTreno,
