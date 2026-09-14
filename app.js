@@ -230,12 +230,11 @@ function createCard(sol, index, isNext) {
       <span class="cd-label">Parte tra</span>
       <span class="cd-value" id="cd-${index}">--:--:--</span>
     </div>
-    ${isNext && currentDir === 'andata' ? '<div class="bus-info" id="bus555"><span>🚌 Bus 555: aggiornamento...</span></div>' : ''}
     <div class="card-meta">
       <span class="meta-item"${delayClass}>${escapeHtml(delayText)}</span>
       ${sol.platform ? `<span class="meta-item">Bin. ${escapeHtml(sol.platform)}</span>` : ''}
     </div>
-    <button class="btn-details" type="button">Dettagli</button>
+    ${isNext && currentDir === 'andata' ? '<div class="bus-info" id="bus555"><span>🚌 Bus 555: aggiornamento...</span></div>' : ''}
   `;
 
   const busEl = div.querySelector('#bus555');
@@ -530,55 +529,6 @@ function startBusPolling() {
   busTick();
 }
 
-// --- Scheda dettagli (bottom sheet) ---
-
-function openSheet(index) {
-  const s = activeSolutions[index];
-  if (!s) return;
-
-  const delayText = s.delay > 0 ? '+' + s.delay + ' min di ritardo' : 'In orario';
-  const delayClass = s.delay > 0 ? 'accent' : 'good';
-
-  document.getElementById('sheetContent').innerHTML = `
-    <div class="sheet-title">${escapeHtml(s.origin)} → ${escapeHtml(s.destination)}</div>
-    <div class="sheet-sub">${escapeHtml(s.formattedTrain)} · ${escapeHtml(formatDuration(s.durationMs))}</div>
-    <div class="sheet-grid">
-      <div class="info-box">
-        <div class="k">Partenza</div>
-        <div class="v big">${formatTime(s.departureMs)}</div>
-        <div class="v">${formatDate(s.departureMs)}</div>
-      </div>
-      <div class="info-box">
-        <div class="k">Arrivo</div>
-        <div class="v big">${formatTime(s.arrivalMs)}</div>
-        <div class="v">${formatDate(s.arrivalMs)}</div>
-      </div>
-      <div class="info-box">
-        <div class="k">Ritardo</div>
-        <div class="v big ${delayClass}">${escapeHtml(delayText)}</div>
-      </div>
-      <div class="info-box">
-        <div class="k">Binario</div>
-        <div class="v big">${escapeHtml(s.platform || '—')}</div>
-      </div>
-      <div class="info-box">
-        <div class="k">Categoria</div>
-        <div class="v">${escapeHtml(s.category || 'Regionale')}</div>
-      </div>
-      <div class="info-box">
-        <div class="k">Numero treno</div>
-        <div class="v">${escapeHtml(s.trainNumber)}</div>
-      </div>
-    </div>
-  `;
-
-  document.getElementById('sheetBackdrop').classList.add('open');
-}
-
-function closeSheet() {
-  document.getElementById('sheetBackdrop').classList.remove('open');
-}
-
 // --- Percorso (direzione) ---
 
 function updateRouteUI() {
@@ -668,14 +618,5 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnRefresh').addEventListener('click', () => {
     doSearch();
     updateBusInfo();
-  });
-
-  document.getElementById('solutions').addEventListener('click', (e) => {
-    const card = e.target.closest('.card');
-    if (card) openSheet(Number(card.dataset.idx));
-  });
-
-  document.getElementById('sheetBackdrop').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) closeSheet();
   });
 });
