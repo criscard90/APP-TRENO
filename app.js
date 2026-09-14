@@ -334,8 +334,9 @@ const pbOne = (fs, n) => fs.find(f => f.field === n);
 const pbStr = f => (f && f.data ? new TextDecoder().decode(f.data) : null);
 const pbInt = f => (f && f.varint !== undefined ? Number(f.varint) : null);
 
-// Estrae le prossime partenze del bus 555 da Ponte Di Nona (dir 0, stop 82110)
-// e calcola quante fermate manca il prossimo bus
+// Estrae TUTTE le vetture 555 tracciate in tempo reale alla palina 82110:
+// - dir 0 = partenza da capolinea verso Lunghezza (stopsAway = fermate di distanza, depEpoch = ripartenza)
+// - dir 1 = in arrivo al capolinea (stessa visualizzazione di ProBus)
 function parseBus555RT(pb) {
   const top = pbDecodeFields(pb, 0, pb.length);
   const now = Date.now() / 1000;
@@ -351,7 +352,8 @@ function parseBus555RT(pb) {
     if (!tripRaw) continue;
     const trip = pbDecodeFields(tripRaw.data, 0, tripRaw.data.length);
     if (pbStr(pbOne(trip, 5)) !== '555') continue;
-    if (pbInt(pbOne(trip, 6)) !== 0) continue; // solo partenze da capolinea (verso Lunghezza)
+    const dir = pbInt(pbOne(trip, 6));
+    if (dir !== 0 && dir !== 1) continue;
 
     const stus = pbAll(tu, 2).map(s => pbDecodeFields(s.data, 0, s.data.length));
     const myStop = stus.find(s => pbStr(pbOne(s, 4)) === BUS_STOP_ID);
@@ -362,7 +364,7 @@ function parseBus555RT(pb) {
     const epoch = pbInt(pbOne(arr, 2));
     if (!epoch || epoch - now <= -60) continue;
 
-    // partenza prevista dalla palina (per il bus fermo in capolinea: stopsAway = 0)
+    // partenza prevista dalla palina (dir 0 fermo in capolinea: stopsAway = 0)
     const depRaw = pbOne(myStop, 3);
     let depEpoch = null;
     if (depRaw) {
@@ -370,14 +372,16 @@ function parseBus555RT(pb) {
       depEpoch = pbInt(pbOne(dep, 2));
     }
 
-    // fermate di distanza: quante fermate ancora da servire prima della nostra
+    // fermate di distanza (solo dir 0)
     const mySeq = pbInt(pbOne(myStop, 1));
-    const stopsAway = stus.filter(s => {
-      const seq = pbInt(pbOne(s, 1));
-      return seq !== null && mySeq !== null && seq < mySeq;
-    }).length;
+    const stopsAway = dir === 0
+      ? stus.filter(s => {
+          const seq = pbInt(pbOne(s, 1));
+          return seq !== null && mySeq !== null && seq < mySeq;
+        }).length
+      : -1; // dir 1: non applicabile
 
-    out.push({ epoch, depEpoch, stopsAway });
+    out.push({ epoch, depEpoch, stopsAway, dir });
   }
   return out.sort((a, b) => a.epoch - b.epoch);
 }
@@ -443,14 +447,20 @@ function renderBusInfo() {
   const el = document.getElementById('bus555');
   if (!el) return;
 
-  // Tutte le vetture 555 tracciate in real-time (in corsa verso la palina / in capolinea)
+  // Tutte le vetture 555 tracciate in real-time (in corsa / in capolinea)
   const now = Date.now() / 1000;
   const etas = (busArrivals || []).map(m => {
+    const t = new Date(m.epoch * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    if (m.dir === 1) {
+      // bus in arrivo al capolinea (come ProBus)
+      const min = Math.max(0, Math.round((m.epoch - now) / 60));
+      return min <= 0 ? 'in capolinea' : 'in arrivo tra ' + min + ' min (' + t + ')';
+    }
     if (m.stopsAway === 0 && m.depEpoch) {
       // bus fermo in capolinea: countdown alla ripartenza
       const min = Math.max(0, Math.round((m.depEpoch - now) / 60));
-      const t = new Date(m.depEpoch * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-      return 'parte tra ' + min + ' min (' + t + ')';
+      const dt = new Date(m.depEpoch * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      return 'parte tra ' + min + ' min (' + dt + ')';
     }
     const min = Math.max(0, Math.round((m.epoch - now) / 60));
     return min <= 0 ? 'in arrivo' : m.stopsAway + " Ferm. (" + min + "')";
@@ -470,9 +480,9 @@ function renderBusInfo() {
       .map(d => d.t);
   }
 
-  // Correzione real-time sul primo orario in arrivo
+  // Correzione real-time sul primo orario in arrivo (solo vetture dir 0 = partenze)
   if (busArrivals && busArrivals.length > 0) {
-    const first = busArrivals[0];
+    const first = busArrivals.find(m => m.dir === 0) || busArrivals[0];
     const d = new Date(first.epoch * 1000);
     const rtT = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     const diff = (a, b) => {
