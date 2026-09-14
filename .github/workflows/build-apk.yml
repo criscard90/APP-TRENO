@@ -31,6 +31,12 @@ jobs:
           npm init -y
           npm install --no-save @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
 
+      - name: Installa sharp (generazione icone)
+        run: npm install --no-save sharp
+
+      - name: Genera icone Android
+        run: node scripts/generate-icons.js
+
       - name: Aggiunge piattaforma Android
         run: npx cap add android
 
