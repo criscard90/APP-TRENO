@@ -238,6 +238,14 @@ function createCard(sol, index, isNext) {
     <button class="btn-details" type="button">Dettagli</button>
   `;
 
+  const busEl = div.querySelector('#bus555');
+  if (busEl) {
+    busEl.addEventListener('click', (e) => {
+      e.stopPropagation(); // non aprire la scheda dettagli
+      updateBusInfo();
+    });
+  }
+
   return div;
 }
 
@@ -275,6 +283,9 @@ const BUS_STOP_ID = '82110';   // PONTE DI NONA (FL2)
 const BUS_DIR = 0;             // 0 = verso Lunghezza/Pantano (il bus che prendi a Ponte Di Nona)
 let busIntervalId = null;
 let busRenderId = null;
+let busAutoInterval = null;
+let busFetching = false;
+let busAutoActive = false;
 let busArrivals = null; // [{arrivalEpoch}] della dir 0, già ordinate
 
 function pbReadVarint(b, pos) {
@@ -395,21 +406,59 @@ function renderBusInfo() {
 }
 
 async function updateBusInfo() {
+  if (busFetching) return;
+  busFetching = true;
+  renderBusInfo();
   try {
     const arrivals = await fetchBus555();
     busArrivals = arrivals || [];
   } catch {
     busArrivals = busArrivals || [];
   }
+  busFetching = false;
+  renderBusInfo();
+}
+
+function renderBusInfo() {
+  const el = document.getElementById('bus555');
+  if (!el) return;
+  if (busArrivals === null) {
+    el.innerHTML = '🚌 <b>555</b> verso Lunghezza · <b>tocca qui per aggiornare</b>';
+  } else if (busArrivals.length === 0) {
+    el.innerHTML = '🚌 Nessun <b>555</b> verso Lunghezza in arrivo alla palina (prossimo non ancora nel feed RT)';
+  } else {
+    const now = Date.now() / 1000;
+    const parts = busArrivals.slice(0, 3).map(ep => {
+      const min = Math.max(0, Math.round((ep - now) / 60));
+      const t = new Date(ep * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+      return '<b>tra ' + min + ' min</b> (' + t + ')';
+    });
+    el.innerHTML = '🚌 <b>555</b> verso Lunghezza · ' + parts.join(' · ');
+  }
+}
+
+// Tick ogni 15s: aggiorna i minuti a schermo e attiva la modalità automatica
+// quando l'arrivo del prossimo treno è a ≤ 5 minuti (finestra di 5 min prima a 10 min dopo)
+function busTick() {
+  const sol = currentDir === 'andata' ? activeSolutions[0] : null;
+  const nowMs = Date.now();
+  const shouldAuto = !!(sol && nowMs >= sol.arrivalMs - 5 * 60000 && nowMs <= sol.arrivalMs + 10 * 60000);
+  if (shouldAuto && !busAutoActive) {
+    busAutoActive = true;
+    updateBusInfo();
+    busAutoInterval = setInterval(updateBusInfo, 60000);
+  } else if (!shouldAuto && busAutoActive) {
+    busAutoActive = false;
+    clearInterval(busAutoInterval);
+    busAutoInterval = null;
+  }
   renderBusInfo();
 }
 
 function startBusPolling() {
-  if (busIntervalId) clearInterval(busIntervalId);
   if (busRenderId) clearInterval(busRenderId);
-  updateBusInfo();
-  busIntervalId = setInterval(updateBusInfo, 60000); // feed ufficiale aggiornato ogni ~60s
-  busRenderId = setInterval(renderBusInfo, 15000);   // ricalcolo minuti a schermo
+  busRenderId = setInterval(busTick, 15000);
+  busTick();
 }
 
 // --- Scheda dettagli (bottom sheet) ---
@@ -507,6 +556,7 @@ async function doSearch() {
     loading.style.display = 'none';
     renderSolutions(solutions);
     startCountdowns();
+    renderBusInfo();
   } catch (err) {
     loading.style.display = 'none';
     error.style.display = 'block';
@@ -538,6 +588,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnNow').addEventListener('click', () => {
     setDefaultInputs();
     doSearch();
+  });
+
+  document.getElementById('btnRefresh').addEventListener('click', () => {
+    doSearch();
+    updateBusInfo();
   });
 
   document.getElementById('solutions').addEventListener('click', (e) => {
