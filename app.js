@@ -286,7 +286,8 @@ let busRenderId = null;
 let busAutoInterval = null;
 let busFetching = false;
 let busAutoActive = false;
-let busArrivals = null; // [{arrivalEpoch}] della dir 0, già ordinate
+let busArrivals = null; // [{epoch, stopsAway}] dir 0, già ordinate
+let busSchedule = null; // schedule-555.json (orario programmato ufficiale)
 
 function pbReadVarint(b, pos) {
   let result = 0n, shift = 0n;
@@ -431,19 +432,49 @@ async function updateBusInfo() {
 function renderBusInfo() {
   const el = document.getElementById('bus555');
   if (!el) return;
-  if (busArrivals === null) {
-    el.innerHTML = '🚌 <b>555</b> · tocca qui per aggiornare';
-  } else if (busArrivals.length === 0) {
-    el.innerHTML = '🚌 <b>555</b> · nessuna partenza imminente nel feed RT';
-  } else {
-    const now = Date.now() / 1000;
+
+  // Partenze programmate di oggi (servizio: 10=feriale, 20=sabato, 30=festivi)
+  const now = new Date();
+  const dow = now.getDay(); // 0 dom, 6 sab
+  const svc = dow === 0 ? '30' : (dow === 6 ? '20' : '10');
+  const hhmm = pad2(now.getHours()) + ':' + pad2(now.getMinutes());
+  let sched = [];
+  if (busSchedule) {
+    sched = (busSchedule.departures || [])
+      .filter(d => d.s.includes(svc) && d.t >= hhmm)
+      .slice(0, 3)
+      .map(d => d.t);
+  }
+
+  // Correzione real-time sul primo orario in arrivo
+  let eta = null;
+  if (busArrivals && busArrivals.length > 0) {
     const first = busArrivals[0];
-    const min = Math.max(0, Math.round((first.epoch - now) / 60));
-    const eta = min <= 0 ? 'in palina' : first.stopsAway + ' Ferm. (' + min + "')";
-    const times = busArrivals.slice(0, 3)
-      .map(m => new Date(m.epoch * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }))
-      .join(' - ');
-    el.innerHTML = '🚌 <b>555</b> ' + eta + ' · partenze da Ponte Di Nona: <b>' + times + '</b>';
+    const d = new Date(first.epoch * 1000);
+    const rtT = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    eta = { epoch: first.epoch, stopsAway: first.stopsAway };
+    const diff = (a, b) => {
+      const [ah, am] = a.split(':').map(Number);
+      const [bh, bm] = b.split(':').map(Number);
+      return (ah * 60 + am) - (bh * 60 + bm);
+    };
+    const idx = sched.findIndex(t => Math.abs(diff(t, rtT)) <= 15);
+    if (idx >= 0) sched[idx] = rtT;
+    else sched.unshift(rtT);
+    sched.sort();
+  }
+
+  let head = '';
+  if (eta) {
+    const min = Math.max(0, Math.round((eta.epoch - Date.now() / 1000) / 60));
+    head = ' ' + (min <= 0 ? 'in palina' : eta.stopsAway + ' Ferm. (' + min + "\')");
+  }
+
+  if (!eta && !busSchedule) {
+    el.innerHTML = '🚌 <b>555</b> · tocca qui per aggiornare';
+  } else {
+    el.innerHTML = '🚌 <b>555</b>' + head + ' · partenze da Ponte Di Nona: <b>' +
+      (sched.length ? sched.join(' - ') : '—') + '</b>';
   }
 }
 
@@ -592,6 +623,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   doSearch();
   startBusPolling();
+
+  fetch('schedule-555.json')
+    .then(r => (r.ok ? r.json() : null))
+    .then(j => { busSchedule = j; renderBusInfo(); })
+    .catch(() => {});
 
   document.getElementById('routeBadge').addEventListener('click', swapDirection);
   document.getElementById('btnSearch').addEventListener('click', doSearch);

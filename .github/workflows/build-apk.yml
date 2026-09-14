@@ -26,7 +26,7 @@ jobs:
       - name: Prepara cartella web (www)
         run: |
           mkdir -p www/icons
-          cp index.html app.js styles.css manifest.webmanifest service-worker.js www/
+          cp index.html app.js styles.css manifest.webmanifest service-worker.js schedule-555.json www/
           cp icons/icon.svg www/icons/
 
       - name: Installa Capacitor
