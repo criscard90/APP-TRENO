@@ -479,20 +479,32 @@ function renderBusInfo() {
       .map(d => d.t);
   }
 
-  // Correzione real-time sul primo orario in arrivo (solo vetture dir 0 = partenze)
+  // Correzione real-time:
+  // - dir 0 = vettura che parte dalla palina → sostituisce/inserisce l'orario programmato
+  // - dir 1 = vettura in arrivo al capolinea → è la stessa che poi riparte: evidenzia la
+  //   partenza programmata corrispondente (stesso orario = stesso bus, non due eventi)
   if (busArrivals && busArrivals.length > 0) {
-    const first = busArrivals.find(m => m.dir === 0) || busArrivals[0];
-    const d = new Date(first.epoch * 1000);
-    const rtT = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    const tOf = e => { const d = new Date(e * 1000); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
     const diff = (a, b) => {
       const [ah, am] = a.split(':').map(Number);
       const [bh, bm] = b.split(':').map(Number);
       return (ah * 60 + am) - (bh * 60 + bm);
     };
-    const idx = sched.findIndex(t => Math.abs(diff(t, rtT)) <= 15);
-    if (idx >= 0) sched[idx] = rtT;
-    else sched.unshift(rtT);
-    sched.sort();
+    const dep0 = busArrivals.find(m => m.dir === 0);
+    if (dep0) {
+      const rtT = tOf(dep0.epoch);
+      const idx = sched.findIndex(t => Math.abs(diff(t, rtT)) <= 15);
+      if (idx >= 0) sched[idx] = rtT;
+      else sched.unshift(rtT);
+      sched.sort();
+      sched = sched.slice(0, 3);
+    }
+    const arr1 = busArrivals.find(m => m.dir === 1);
+    if (arr1) {
+      const at = tOf(arr1.epoch);
+      const idx = sched.findIndex(t => Math.abs(diff(t, at)) <= 5);
+      if (idx >= 0) sched[idx] = at + ' in arrivo';
+    }
   }
 
   if (!busArrivals && !busSchedule) {
