@@ -617,6 +617,8 @@ if ('serviceWorker' in navigator && !getCapacitorHttp()) {
 // --- Init ---
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (window.lucide) lucide.createIcons();
+
   setDefaultInputs();
   updateRouteUI();
   updateClock();

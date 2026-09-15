@@ -11,36 +11,13 @@
   <title>PdN Solutions</title>
 </head>
 <body>
-  <!-- Icone SVG stilizzate (riutilizzabili) -->
-  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <defs>
-      <symbol id="i-train" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 3a5 5 0 0 1 5 5v5a3 3 0 0 1-3 3h-4a3 3 0 0 1-3-3V8a5 5 0 0 1 5-5Z"/>
-        <path d="M7 11h10"/>
-        <path d="M10 14h.01"/>
-        <path d="M14 14h.01"/>
-        <path d="m9 16-2 5"/>
-        <path d="m15 16 2 5"/>
-        <path d="M9.5 21h5"/>
-      </symbol>
-      <symbol id="i-bus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M5 3h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/>
-        <path d="M3 10h18"/>
-        <path d="M7 13.5h.01"/>
-        <path d="M17 13.5h.01"/>
-        <circle cx="7.5" cy="19.5" r="1.5"/>
-        <circle cx="16.5" cy="19.5" r="1.5"/>
-      </symbol>
-    </defs>
-  </svg>
-
   <div class="app">
     <header class="header">
       <div class="header-top">
         <div class="logo">
-          <svg class="ico ico-train"><use href="#i-train"/></svg>
+          <i data-lucide="train-front" class="ico ico-train"></i>
           <h1>PdN Solutions</h1>
-          <svg class="ico ico-bus"><use href="#i-bus"/></svg>
+          <i data-lucide="bus-front" class="ico ico-bus"></i>
         </div>
         <div class="clock" id="currentTime">--:--:--</div>
       </div>
@@ -62,8 +39,8 @@
       </div>
 
       <nav class="tabs">
-        <button class="tab active" id="tabTreni" type="button"><svg class="ico"><use href="#i-train"/></svg> Treni</button>
-        <button class="tab" id="tabBus" type="button"><svg class="ico"><use href="#i-bus"/></svg> Bus 555</button>
+        <button class="tab active" id="tabTreni" type="button"><i data-lucide="train-front" class="ico"></i> Treni</button>
+        <button class="tab" id="tabBus" type="button"><i data-lucide="bus-front" class="ico"></i> Bus 555</button>
       </nav>
     </header>
 
@@ -94,7 +71,7 @@
         <div class="bus-card">
           <div class="bus-head">
             <div>
-              <h2><svg class="ico ico-bus"><use href="#i-bus"/></svg> Linea 555</h2>
+              <h2><i data-lucide="bus-front" class="ico ico-bus"></i> Linea 555</h2>
               <span class="bus-sub">Palina Ponte Di Nona · capolinea</span>
             </div>
             <button class="btn btn-refresh" id="btnBusRefresh" title="Aggiorna tempo reale">⟳</button>
@@ -122,6 +99,7 @@
 
   
 
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
