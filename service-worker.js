@@ -1,4 +1,4 @@
-const CACHE_NAME = 'treno-app-v3';
+const CACHE_NAME = 'treno-app-v4';
 const ASSETS = [
   './',
   './index.html',

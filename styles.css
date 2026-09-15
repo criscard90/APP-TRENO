@@ -640,3 +640,34 @@ body {
   text-align: right;
 }
 
+
+/* ---------- Icone SVG ---------- */
+
+.ico {
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: -0.16em;
+  flex-shrink: 0;
+}
+
+.ico-train {
+  color: var(--accent);
+}
+
+.ico-bus {
+  color: #ffb84d;
+}
+
+.tab .ico {
+  vertical-align: -0.2em;
+}
+
+.tab.active .ico {
+  color: #fff;
+}
+
+.logo .ico {
+  width: 1.25em;
+  height: 1.25em;
+}
+
