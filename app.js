@@ -186,7 +186,7 @@ function renderSolutions(solutions) {
 
   activeSolutions = solutions;
   info.style.display = 'block';
-  info.textContent = solutions.length + (solutions.length === 1 ? ' treno regionale' : ' treni regionali') + ' · tocca la card per i dettagli';
+  info.textContent = solutions.length + (solutions.length === 1 ? ' treno regionale' : ' treni regionali');
 
   solutions.forEach((sol, i) => {
     container.appendChild(createCard(sol, i, i === 0));
@@ -234,16 +234,7 @@ function createCard(sol, index, isNext) {
       <span class="meta-item"${delayClass}>${escapeHtml(delayText)}</span>
       ${sol.platform ? `<span class="meta-item">Bin. ${escapeHtml(sol.platform)}</span>` : ''}
     </div>
-    ${isNext && currentDir === 'andata' ? '<div class="bus-info" id="bus555"><span>🚌 Bus 555: aggiornamento...</span></div>' : ''}
   `;
-
-  const busEl = div.querySelector('#bus555');
-  if (busEl) {
-    busEl.addEventListener('click', (e) => {
-      e.stopPropagation(); // non aprire la scheda dettagli
-      updateBusInfo();
-    });
-  }
 
   return div;
 }
@@ -410,23 +401,6 @@ async function fetchBus555() {
   return parseBus555RT(new Uint8Array(await resp.arrayBuffer()));
 }
 
-function renderBusInfo() {
-  const el = document.getElementById('bus555');
-  if (!el) return;
-  if (busArrivals && busArrivals.length > 0) {
-    const now = Date.now() / 1000;
-    const first = busArrivals[0];
-    const min = Math.max(0, Math.round((first - now) / 60));
-    const t = new Date(first * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    el.innerHTML =
-      '🚌 Troverai il <b>555</b> verso Lunghezza: <b>tra ' + min + ' min</b> (arrivo ' + t + ')';
-  } else if (busArrivals) {
-    el.innerHTML = '🚌 Nessun <b>555</b> verso Lunghezza in arrivo alla palina di Ponte Di Nona';
-  } else {
-    el.innerHTML = '🚌 Bus 555: aggiornamento...';
-  }
-}
-
 async function updateBusInfo() {
   if (busFetching) return;
   busFetching = true;
@@ -443,77 +417,99 @@ async function updateBusInfo() {
 }
 
 function renderBusInfo() {
-  const el = document.getElementById('bus555');
-  if (!el) return;
+  const liveEl = document.getElementById('busLive');
+  const nextEl = document.getElementById('busNext');
+  const updEl = document.getElementById('busUpdated');
+  if (!liveEl || !nextEl) return;
 
-  // Tutte le vetture 555 tracciate in real-time (in corsa / in capolinea)
   const now = Date.now() / 1000;
-  const etas = (busArrivals || []).map(m => {
-    const t = new Date(m.epoch * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    if (m.dir === 1) {
-      // bus in arrivo al capolinea (come ProBus)
-      const min = Math.max(0, Math.round((m.epoch - now) / 60));
-      return min <= 0 ? 'in capolinea' : 'in arrivo tra ' + min + ' min (' + t + ')';
-    }
-    if (m.stopsAway === 0 && m.depEpoch) {
-      // bus fermo in capolinea: countdown alla ripartenza
-      const min = Math.max(0, Math.round((m.depEpoch - now) / 60));
-      const dt = new Date(m.depEpoch * 1000).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-      return 'parte tra ' + min + ' min (' + dt + ')';
-    }
-    const min = Math.max(0, Math.round((m.epoch - now) / 60));
-    return min <= 0 ? 'in arrivo' : m.stopsAway + " Ferm. (" + min + "')";
-  });
-  const head = etas.length > 0 ? ' ' + etas.join(' · ') : '';
+  const tOf = e => {
+    const d = new Date(e * 1000);
+    return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  };
+  const row = (label, time, badge, cls) =>
+    '<div class="bus-row' + (cls ? ' ' + cls : '') + '">' +
+      '<span class="bus-label">' + label + '</span>' +
+      '<span class="bus-right"><b class="bus-time">' + time + '</b>' +
+      (badge ? '<span class="bus-badge">' + badge + '</span>' : '') + '</span>' +
+    '</div>';
 
-  // Partenze programmate di oggi (servizio: 10=feriale, 20=sabato, 30=festivi)
+  // --- Sezione: in tempo reale (tutte le vetture tracciate) ---
+  let liveHtml;
+  if (busArrivals === null) {
+    liveHtml = '<div class="bus-row muted">Aggiornamento…</div>';
+  } else if (busArrivals.length === 0) {
+    liveHtml = '<div class="bus-row muted">Nessuna vettura 555 tracciata in questo momento</div>';
+  } else {
+    liveHtml = busArrivals.map(m => {
+      const min = Math.max(0, Math.round((m.epoch - now) / 60));
+      if (m.dir === 1) {
+        // bus in arrivo al capolinea (stessa vista di ProBus)
+        return row('In arrivo al capolinea', tOf(m.epoch), min <= 0 ? 'in capolinea' : 'tra ' + min + ' min');
+      }
+      if (m.stopsAway === 0 && m.depEpoch) {
+        // bus fermo in capolinea: countdown alla ripartenza
+        const dmin = Math.max(0, Math.round((m.depEpoch - now) / 60));
+        return row('In capolinea · riparte', tOf(m.depEpoch), 'tra ' + dmin + ' min', 'ready');
+      }
+      return row('In corsa · ' + m.stopsAway + (m.stopsAway === 1 ? ' fermata' : ' fermate'), tOf(m.epoch),
+        min <= 0 ? 'in arrivo' : 'tra ' + min + ' min');
+    }).join('');
+  }
+  liveEl.innerHTML = liveHtml;
+
+  // --- Sezione: prossime partenze programmate di oggi (10=feriale, 20=sabato, 30=festivi) ---
   const nowD = new Date();
   const dow = nowD.getDay(); // 0 dom, 6 sab
   const svc = dow === 0 ? '30' : (dow === 6 ? '20' : '10');
   const hhmm = pad2(nowD.getHours()) + ':' + pad2(nowD.getMinutes());
-  let sched = [];
-  if (busSchedule) {
-    sched = (busSchedule.departures || [])
-      .filter(d => d.s.includes(svc) && d.t >= hhmm)
-      .slice(0, 3)
-      .map(d => d.t);
-  }
+  let sched = busSchedule
+    ? (busSchedule.departures || [])
+        .filter(d => d.s.includes(svc) && d.t >= hhmm)
+        .slice(0, 3)
+        .map(d => ({ t: d.t, live: false, arriving: false }))
+    : [];
 
   // Correzione real-time:
   // - dir 0 = vettura che parte dalla palina → sostituisce/inserisce l'orario programmato
   // - dir 1 = vettura in arrivo al capolinea → è la stessa che poi riparte: evidenzia la
   //   partenza programmata corrispondente (stesso orario = stesso bus, non due eventi)
+  const diff = (a, b) => {
+    const [ah, am] = a.split(':').map(Number);
+    const [bh, bm] = b.split(':').map(Number);
+    return (ah * 60 + am) - (bh * 60 + bm);
+  };
   if (busArrivals && busArrivals.length > 0) {
-    const tOf = e => { const d = new Date(e * 1000); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
-    const diff = (a, b) => {
-      const [ah, am] = a.split(':').map(Number);
-      const [bh, bm] = b.split(':').map(Number);
-      return (ah * 60 + am) - (bh * 60 + bm);
-    };
     const dep0 = busArrivals.find(m => m.dir === 0);
     if (dep0) {
       const rtT = tOf(dep0.epoch);
-      const idx = sched.findIndex(t => Math.abs(diff(t, rtT)) <= 15);
-      if (idx >= 0) sched[idx] = rtT;
-      else sched.unshift(rtT);
-      sched.sort();
+      const idx = sched.findIndex(o => Math.abs(diff(o.t, rtT)) <= 15);
+      if (idx >= 0) sched[idx] = { t: rtT, live: true, arriving: false };
+      else { sched.unshift({ t: rtT, live: true, arriving: false }); sched.sort((a, b) => diff(a.t, b.t)); }
       sched = sched.slice(0, 3);
     }
     const arr1 = busArrivals.find(m => m.dir === 1);
     if (arr1) {
       const at = tOf(arr1.epoch);
-      const idx = sched.findIndex(t => Math.abs(diff(t, at)) <= 5);
-      if (idx >= 0) sched[idx] = at + ' in arrivo';
+      const idx = sched.findIndex(o => Math.abs(diff(o.t, at)) <= 5);
+      if (idx >= 0 && !sched[idx].live) sched[idx] = { t: at, live: true, arriving: true };
     }
   }
 
-  if (!busArrivals && !busSchedule) {
-    el.innerHTML = '🚌 <b>555</b> · tocca qui per aggiornare';
-  } else {
-    const fresh = busArrivals && Date.now() - busLastFetch < 90000;
-    const live = busArrivals && busArrivals.length > 0 || fresh ? '' : ' · <i>tocca qui per aggiornamento live</i>';
-    el.innerHTML = '🚌 <b>555</b>' + head + ' · partenze da Ponte Di Nona: <b>' +
-      (sched.length ? sched.join(' - ') : '—') + '</b>' + live;
+  nextEl.innerHTML = sched.length
+    ? sched.map(o =>
+        '<div class="bus-dep' + (o.live ? ' live' : '') + '">' +
+          '<span class="bus-dep-time">' + o.t + '</span>' +
+          (o.arriving ? '<span class="bus-dep-tag arr">bus in arrivo → poi riparte</span>'
+            : o.live ? '<span class="bus-dep-tag">tempo reale</span>' : '<span class="bus-dep-tag">programmato</span>') +
+        '</div>'
+      ).join('')
+    : '<div class="bus-row muted">Nessuna partenza programmata per il resto di oggi</div>';
+
+  if (updEl) {
+    updEl.textContent = busLastFetch
+      ? 'Dati RT aggiornati alle ' + new Date(busLastFetch).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      : '';
   }
 }
 
@@ -539,6 +535,21 @@ function startBusPolling() {
   if (busRenderId) clearInterval(busRenderId);
   busRenderId = setInterval(busTick, 15000);
   busTick();
+}
+
+// --- Tab (Treni / Bus 555) ---
+
+let currentTab = 'treni';
+
+function switchTab(tab) {
+  currentTab = tab;
+  const treni = tab === 'treni';
+  document.getElementById('tabTreni').classList.toggle('active', treni);
+  document.getElementById('tabBus').classList.toggle('active', !treni);
+  document.getElementById('pageTreni').style.display = treni ? '' : 'none';
+  document.getElementById('pageBus').style.display = treni ? 'none' : '';
+  if (!treni) renderBusInfo();
+  try { localStorage.setItem('trenoTab', tab); } catch {}
 }
 
 // --- Percorso (direzione) ---
@@ -631,4 +642,13 @@ document.addEventListener('DOMContentLoaded', () => {
     doSearch();
     updateBusInfo();
   });
+
+  document.getElementById('btnBusRefresh').addEventListener('click', updateBusInfo);
+  document.getElementById('tabTreni').addEventListener('click', () => switchTab('treni'));
+  document.getElementById('tabBus').addEventListener('click', () => switchTab('bus'));
+
+  try {
+    const saved = localStorage.getItem('trenoTab');
+    if (saved === 'bus') switchTab('bus');
+  } catch {}
 });

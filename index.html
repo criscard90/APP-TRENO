@@ -21,12 +21,6 @@
         <div class="clock" id="currentTime">--:--:--</div>
       </div>
 
-      <div class="route-badge" id="routeBadge" title="Tocca per invertire il percorso">
-        <span id="routeFrom">Roma Tiburtina</span>
-        <span class="route-arrow">⇄</span>
-        <span id="routeTo">Ponte Di Nona</span>
-      </div>
-
       <div class="search-bar">
         <div class="search-row">
           <div class="field">
@@ -42,21 +36,58 @@
         </div>
         <button class="btn btn-primary btn-search" id="btnSearch">Cerca</button>
       </div>
+
+      <nav class="tabs">
+        <button class="tab active" id="tabTreni" type="button">🚆 Treni</button>
+        <button class="tab" id="tabBus" type="button">🚌 Bus 555</button>
+      </nav>
     </header>
 
     <main class="main">
-      <div class="results-info" id="resultsInfo" style="display:none"></div>
+      <section id="pageTreni">
+        <div class="route-badge" id="routeBadge" title="Tocca per invertire il percorso">
+          <span id="routeFrom">Roma Tiburtina</span>
+          <span class="route-arrow">⇄</span>
+          <span id="routeTo">Ponte Di Nona</span>
+        </div>
 
-      <div class="loading" id="loading">
-        <div class="spinner"></div>
-        <p>Ricerca treni in corso...</p>
-      </div>
+        <div class="results-info" id="resultsInfo" style="display:none"></div>
 
-      <div class="error" id="error" style="display:none">
-        <p id="errorMessage"></p>
-      </div>
+        <div class="loading" id="loading">
+          <div class="spinner"></div>
+          <p>Ricerca treni in corso...</p>
+        </div>
 
-      <div class="solutions" id="solutions"></div>
+        <div class="error" id="error" style="display:none">
+          <p id="errorMessage"></p>
+        </div>
+
+        <div class="solutions" id="solutions"></div>
+      </section>
+
+      <section id="pageBus" style="display:none">
+        <div class="bus-card">
+          <div class="bus-head">
+            <div>
+              <h2>🚌 Linea 555</h2>
+              <span class="bus-sub">Palina Ponte Di Nona · capolinea</span>
+            </div>
+            <button class="btn btn-refresh" id="btnBusRefresh" title="Aggiorna tempo reale">⟳</button>
+          </div>
+
+          <h3 class="bus-section">In tempo reale</h3>
+          <div id="busLive">
+            <div class="bus-row muted">Aggiornamento…</div>
+          </div>
+
+          <h3 class="bus-section">Prossime partenze da Ponte Di Nona</h3>
+          <div id="busNext">
+            <div class="bus-row muted">Calcolo…</div>
+          </div>
+
+          <div class="bus-updated" id="busUpdated"></div>
+        </div>
+      </section>
     </main>
 
     <footer class="footer">

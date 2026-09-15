@@ -1,10 +1,11 @@
-const CACHE_NAME = 'treno-app-v1';
+const CACHE_NAME = 'treno-app-v3';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
-  './manifest.webmanifest'
+  './manifest.webmanifest',
+  './schedule-555.json'
 ];
 
 self.addEventListener('install', (event) => {
